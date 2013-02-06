@@ -6169,33 +6169,47 @@ execute_mpls_push_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
     ctx->flow.dl_type = eth_type;
 }
 
-static void
+static bool
 execute_mpls_pop_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
 {
     ovs_assert(eth_type_mpls(ctx->flow.dl_type));
-    ovs_assert(!eth_type_mpls(eth_type));
 
-    if (ctx->flow.mpls_depth) {
-        ctx->flow.mpls_depth--;
-        ctx->flow.mpls_lse = htonl(0);
-        if (!ctx->flow.mpls_depth) {
-            ctx->base_flow.encap_dl_type = ctx->flow.dl_type = eth_type;
-            ctx->flow.encap_dl_type = htons(0);
-            if (ctx->packet) {
-                uint8_t nw_ttl = ctx->flow.nw_ttl;
-                flow_extract_l3_onwards(ctx->packet, &ctx->base_flow, eth_type);
-                ctx->inner_flow = ctx->base_flow;
-                flow_copy_l3_onwards(&ctx->flow, &ctx->base_flow);
-                /* If nw_ttl is non-zero then nw_ttl was already set in
-                 * ctx->flow. his can only have occured due to a previous
-                 * copy_ttl_in action so restore the value calculated by
-                 * the action */
-                if (nw_ttl) {
-                    ctx->flow.nw_ttl = nw_ttl;
-                }
+    /* Stop processing if there is no MPLS LSE to pop */
+    if (ctx->flow.mpls_depth < 0) {
+        return true;
+    }
+
+    /* Either one of the following should be true:
+     * 1. flow.mpls_depth > 1 and eth_type is an MPLS ethernet type or;
+     * 2. flow.mpls_depth <= 1 and eth_type is not MPLS ethernet type
+     * Or in other words, if a pop leaves MPLS LSE stack entries then
+     * the packet is still MPLS, otherwise it is not.
+     * This condition can be tested using an xor.
+     */
+    if ((ctx->flow.mpls_depth > 1) ^ eth_type_mpls(eth_type)) {
+        return true;
+    }
+
+    ctx->flow.mpls_depth--;
+    ctx->flow.mpls_lse = htonl(0);
+    if (!ctx->flow.mpls_depth) {
+        ctx->base_flow.encap_dl_type = ctx->flow.dl_type = eth_type;
+        ctx->flow.encap_dl_type = htons(0);
+        if (ctx->packet) {
+            uint8_t nw_ttl = ctx->flow.nw_ttl;
+            flow_extract_l3_onwards(ctx->packet, &ctx->base_flow, eth_type);
+            ctx->inner_flow = ctx->base_flow;
+            flow_copy_l3_onwards(&ctx->flow, &ctx->base_flow);
+            /* If nw_ttl is non-zero then nw_ttl was already set in ctx->flow.
+             * This can only have occured due to a previous copy_ttl_in
+             * action so restore the value calculated by the action */
+            if (nw_ttl) {
+                ctx->flow.nw_ttl = nw_ttl;
             }
         }
     }
+
+    return false;
 }
 
 static bool
@@ -6654,7 +6668,10 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_POP_MPLS:
-            execute_mpls_pop_action(ctx, ofpact_get_POP_MPLS(a)->ethertype);
+            if (execute_mpls_pop_action(ctx,
+                                        ofpact_get_POP_MPLS(a)->ethertype)) {
+                goto out;
+            }
             break;
 
         case OFPACT_COPY_TTL_IN:
