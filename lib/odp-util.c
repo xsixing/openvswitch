@@ -2269,13 +2269,12 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
     }
 
     if (flow->mpls_depth < base->mpls_depth) {
-        if (base->mpls_depth - flow->mpls_depth > 1) {
-            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(10, 10);
-            VLOG_WARN_RL(&rl, "Multiple mpls_pop actions reduced to "
-                         " a single mpls_pop action");
+        uint16_t i;
+        for (i = flow->mpls_depth; i < base->mpls_depth; i++) {
+            nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_MPLS,
+                            flow->dl_type);
         }
 
-        nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_MPLS, flow->dl_type);
         if (flow->mpls_depth) {
             /* There is insufficient information tracked to determine if
              * after pushing the outermost MPLS LSE has been modified or not.

@@ -6058,7 +6058,10 @@ execute_controller_action(struct action_xlate_ctx *ctx, int len,
         if (mpls_depth < ctx->flow.mpls_depth) {
             push_mpls(packet, ctx->flow.dl_type, ctx->flow.mpls_lse);
         } else if (mpls_depth > ctx->flow.mpls_depth) {
-            pop_mpls(packet, ctx->flow.dl_type);
+            uint16_t i;
+            for (i = ctx->flow.mpls_depth; i < mpls_depth; i++) {
+                pop_mpls(packet, ctx->flow.dl_type);
+            }
             if (ctx->flow.mpls_depth) {
                 /* There is insufficient information tracked to determine
                  * if after pushing the outermost MPLS LSE has been

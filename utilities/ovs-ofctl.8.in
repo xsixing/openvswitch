@@ -937,12 +937,6 @@ Strips the outermost MPLS label stack entry.  If the MPLS label
 stripped was the only one, changes the ethertype of a packet to
 \fIethertype\fR, which should not ordinarily be an MPLS Ethertype.
 .
-.IP
-There are some limitations in the implementation.  \fBpop_mpls\fR
-followed by another \fBpush_mpls\fR without an intermediate
-\fBpush_mpls\fR will result in the first \fBpush_mpls\fR being
-discarded.
-.
 .IP \fBmod_dl_src\fB:\fImac\fR
 Sets the source Ethernet address to \fImac\fR.
 .
