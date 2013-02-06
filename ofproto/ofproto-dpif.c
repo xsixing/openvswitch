@@ -6129,6 +6129,7 @@ execute_mpls_pop_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
 
     ctx->flow.mpls_depth--;
     ctx->flow.mpls_lse = htonl(0);
+    ctx->flow.dl_type = eth_type;
     if (!ctx->flow.mpls_depth) {
         ctx->base_flow.encap_dl_type = ctx->flow.dl_type = eth_type;
         ctx->flow.encap_dl_type = htons(0);
