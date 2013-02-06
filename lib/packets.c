@@ -367,15 +367,12 @@ push_mpls(struct ofpbuf *packet, ovs_be16 ethtype, ovs_be32 lse)
 void
 pop_mpls(struct ofpbuf *packet, ovs_be16 ethtype)
 {
-    struct mpls_hdr *mh = NULL;
-
     if (is_mpls(packet)) {
         size_t len;
-        mh = packet->l2_5;
+        struct mpls_hdr *mh = packet->l2_5;
         len = (char*)packet->l2_5 - (char*)packet->l2;
-        /* If bottom of the stack set ethertype. */
+        set_ethertype(packet, ethtype);
         if (mh->mpls_lse & htonl(MPLS_BOS_MASK)) {
-            set_ethertype(packet, ethtype);
             packet->l2_5 = NULL;
         } else {
             packet->l2_5 = (char*)packet->l2_5 + MPLS_HLEN;
