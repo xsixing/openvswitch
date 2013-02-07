@@ -99,12 +99,9 @@ parse_mpls(struct ofpbuf *b, struct flow *flow)
     struct mpls_hdr *mh;
 
     while ((mh = ofpbuf_try_pull(b, sizeof *mh))) {
-        if (flow->mpls_depth == 0) {
+        if (flow->mpls_depth++ == 0) {
             flow->mpls_lse = mh->mpls_lse;
-        } else if (flow->mpls_depth == 1) {
-            flow->inner_mpls_lse = mh->mpls_lse;
         }
-        flow->mpls_depth++;
         if (mh->mpls_lse & htonl(MPLS_BOS_MASK)) {
             break;
         }
@@ -500,7 +497,7 @@ flow_extract_l3_onwards(struct ofpbuf *packet, struct flow *flow,
 void
 flow_copy_l3_onwards(struct flow *dst, const struct flow *src)
 {
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 20);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 21);
 
     dst->ipv6_src = src->ipv6_src;
     dst->ipv6_dst = src->ipv6_dst;
@@ -536,7 +533,7 @@ flow_zero_wildcards(struct flow *flow, const struct flow_wildcards *wildcards)
 void
 flow_get_metadata(const struct flow *flow, struct flow_metadata *fmd)
 {
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 20);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 21);
 
     fmd->tun_id = flow->tunnel.tun_id;
     fmd->metadata = flow->metadata;
