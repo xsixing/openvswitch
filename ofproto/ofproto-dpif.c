@@ -6085,7 +6085,7 @@ execute_mpls_push_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
 {
     ovs_assert(eth_type_mpls(eth_type));
 
-    if (ctx->base_flow.mpls_depth) {
+    if (ctx->flow.mpls_depth) {
         ctx->flow.mpls_lse &= ~htonl(MPLS_BOS_MASK);
         ctx->flow.mpls_depth++;
     } else {
