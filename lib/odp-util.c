@@ -2287,6 +2287,16 @@ commit_vlan_action(const struct flow *flow, struct flow *base,
 }
 
 static void
+commit_mpls_set_action(const struct flow *flow, struct ofpbuf *odp_actions)
+{
+    struct ovs_key_mpls mpls_key;
+
+    mpls_key.mpls_top_lse = flow->mpls_lse;
+    commit_set_action(odp_actions, OVS_KEY_ATTR_MPLS,
+                      &mpls_key, sizeof(mpls_key));
+}
+
+static void
 commit_mpls_action(const struct flow *flow, struct flow *base,
                    struct ofpbuf *odp_actions)
 {
@@ -2303,6 +2313,15 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
         }
 
         nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_MPLS, flow->dl_type);
+        if (flow->mpls_depth) {
+            /* There is insufficient information tracked to determine if
+             * after pushing the outermost MPLS LSE has been modified or not.
+             * So if there is an outermost MPLS LSE present then
+             * always set it to the value in flow. This should be correct
+             * but may result in an unnecessary set action in some cases.
+             */
+            commit_mpls_set_action(flow, odp_actions);
+        }
     } else if (flow->mpls_depth > base->mpls_depth) {
         struct ovs_action_push_mpls *mpls;
 
@@ -2318,11 +2337,7 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
         mpls->mpls_ethertype = flow->dl_type;
         mpls->mpls_lse = flow->mpls_lse;
     } else {
-        struct ovs_key_mpls mpls_key;
-
-        mpls_key.mpls_top_lse = flow->mpls_lse;
-        commit_set_action(odp_actions, OVS_KEY_ATTR_MPLS,
-                          &mpls_key, sizeof(mpls_key));
+        commit_mpls_set_action(flow, odp_actions);
     }
 
     base->dl_type = flow->dl_type;
