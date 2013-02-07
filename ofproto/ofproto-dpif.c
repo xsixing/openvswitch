@@ -6044,6 +6044,15 @@ execute_controller_action(struct action_xlate_ctx *ctx, int len,
             push_mpls(packet, ctx->flow.dl_type, ctx->flow.mpls_lse);
         } else if (mpls_depth > ctx->flow.mpls_depth) {
             pop_mpls(packet, ctx->flow.dl_type);
+            if (ctx->flow.mpls_depth) {
+                /* There is insufficient information tracked to determine
+                 * if after pushing the outermost MPLS LSE has been
+                 * modified or not.  So if there is an outermost MPLS LSE
+                 * present then always set it to the value in flow. This
+                 * should be correct but may result in an unnecessary set
+                 * action in some cases. */
+                set_mpls_lse(packet, ctx->flow.mpls_lse);
+            }
         } else if (mpls_depth) {
             set_mpls_lse(packet, ctx->flow.mpls_lse);
         }
