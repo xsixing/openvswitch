@@ -244,6 +244,7 @@ cookie=0xd dl_src=60:66:66:66:66:67 actions=copy_ttl_in,dec_ttl,pop_mpls:0x0800,
 cookie=0xd dl_src=60:66:66:66:66:68 actions=pop_mpls:0x8848,controller
 cookie=0xd dl_src=60:66:66:66:66:69 actions=pop_mpls:0x0800,push_mpls:0x8847,controller
 cookie=0xd dl_src=60:66:66:66:66:70 actions=pop_mpls:0x8847,controller
+cookie=0xd dl_src=60:66:66:66:66:71 actions=push_mpls:0x8847,pop_mpls:0x8847,push_mpls:0x8847,controller
 cookie=0xc dl_src=70:77:77:77:77:77 actions=push_mpls:0x8848,load:1000->OXM_OF_MPLS_LABEL[[]],load:7->OXM_OF_MPLS_TC[[]],controller
 ])
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
@@ -595,6 +596,23 @@ NXT_PACKET_IN (xid=0x0): cookie=0xd total_len=62 in_port=1 (via action) data_len
 mpls(label:20,tc:0,ttl:32,bos:1),metadata=0,in_port=0,vlan_tci=0x0000,dl_src=60:66:66:66:66:70,dl_dst=50:54:00:00:00:07
 ])
 
+dnl Modified MPLS pop action.
+AT_CHECK([ovs-ofctl monitor br0 65534 -P nxm --detach --pidfile 2> ofctl_monitor.log])
+
+for i in 1 2 3; do
+    ovs-appctl netdev-dummy/receive p1 'in_port(1),eth(src=60:66:66:66:66:71,dst=50:54:00:00:00:07),eth_type(0x8847),mpls(label=10,tc=3,ttl=100,bos=1),encap(ipv4(src=192.168.0.1,dst=192.168.0.2,proto=6,tos=0,ttl=64,frag=no))'
+done
+
+OVS_WAIT_UNTIL([ovs-appctl -t ovs-ofctl exit])
+AT_CHECK([cat ofctl_monitor.log], [0], [dnl
+NXT_PACKET_IN (xid=0x0): cookie=0xd total_len=64 in_port=1 (via action) data_len=64 (unbuffered)
+mpls(label:10,tc:3,ttl:100,bos:0),metadata=0,in_port=0,vlan_tci=0x0000,dl_src=60:66:66:66:66:71,dl_dst=50:54:00:00:00:07
+NXT_PACKET_IN (xid=0x0): cookie=0xd total_len=64 in_port=1 (via action) data_len=64 (unbuffered)
+mpls(label:10,tc:3,ttl:100,bos:0),metadata=0,in_port=0,vlan_tci=0x0000,dl_src=60:66:66:66:66:71,dl_dst=50:54:00:00:00:07
+NXT_PACKET_IN (xid=0x0): cookie=0xd total_len=64 in_port=1 (via action) data_len=64 (unbuffered)
+mpls(label:10,tc:3,ttl:100,bos:0),metadata=0,in_port=0,vlan_tci=0x0000,dl_src=60:66:66:66:66:71,dl_dst=50:54:00:00:00:07
+])
+
 dnl Checksum TCP.
 AT_CHECK([ovs-ofctl monitor br0 65534 -P nxm --detach --no-chdir --pidfile 2> ofctl_monitor.log])
 
@@ -692,6 +710,7 @@ AT_CHECK([ovs-ofctl dump-flows br0 | ofctl_strip | sort], [0], [dnl
  cookie=0xd, n_packets=3, n_bytes=180, dl_src=60:66:66:66:66:66 actions=pop_mpls:0x0800,CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=180, dl_src=60:66:66:66:66:67 actions=copy_ttl_in,dec_ttl(0),pop_mpls:0x0800,dec_ttl(0),CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=180, dl_src=60:66:66:66:66:69 actions=pop_mpls:0x0800,push_mpls:0x8847,CONTROLLER:65535
+ cookie=0xd, n_packets=3, n_bytes=180, dl_src=60:66:66:66:66:71 actions=push_mpls:0x8847,pop_mpls:0x8847,push_mpls:0x8847,CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=198, dl_src=60:66:66:66:66:68 actions=pop_mpls:0x8848,CONTROLLER:65535
  cookie=0xd, n_packets=3, n_bytes=198, dl_src=60:66:66:66:66:70 actions=pop_mpls:0x8847,CONTROLLER:65535
  n_packets=3, n_bytes=180, dl_src=10:11:11:11:11:11 actions=CONTROLLER:65535
