@@ -288,12 +288,18 @@ struct action_xlate_ctx {
      * allows for more fine-grained decoding of a flow from a packet.
      * If and only if used base_flow.encal_dl_type will be non-zero */
     struct flow inner_flow;
+
+    /* execute_mpls_*() initialises and uses this member
+     * which is used to track MPLS stack entries other than the outermost
+     * entry which is tracked in flow->mpls_lse */
+    struct ofpbuf *mpls_stack;
 };
 
 static void action_xlate_ctx_init(struct action_xlate_ctx *,
                                   struct ofproto_dpif *, const struct flow *,
                                   ovs_be16 initial_tci, struct rule_dpif *,
                                   uint8_t tcp_flags, struct ofpbuf *);
+static void action_xlate_free_data(struct action_xlate_ctx *);
 static void xlate_actions(struct action_xlate_ctx *,
                           const struct ofpact *ofpacts, size_t ofpacts_len,
                           struct ofpbuf *odp_actions);
@@ -3520,6 +3526,7 @@ handle_flow_miss_without_facet(struct flow_miss *miss,
                       &odp_actions);
         handle_flow_miss_l3_extraction(miss, rule, &ctx.inner_flow,
                                        &inner_key);
+        action_xlate_free_data(&ctx);
 
         if (odp_actions.size) {
             struct dpif_execute *execute = &op->dpif_op.u.execute;
@@ -3590,6 +3597,8 @@ handle_flow_miss_with_facet(struct flow_miss *miss, struct facet *facet,
                 }
                 subfacet->inner_facet = facet;
             }
+
+            action_xlate_free_data(&ctx);
         }
 
         dpif_flow_stats_extract(&facet->flow, packet, now, &stats);
@@ -4532,6 +4541,7 @@ facet_learn(struct facet *facet)
     ctx.may_learn = true;
     xlate_actions_for_side_effects(&ctx, facet->rule->up.ofpacts,
                                    facet->rule->up.ofpacts_len);
+    action_xlate_free_data(&ctx);
 }
 
 static void
@@ -4783,6 +4793,7 @@ facet_check_consistency(struct facet *facet)
         xlate_actions(&ctx, rule->up.ofpacts, rule->up.ofpacts_len,
                       &odp_actions);
         encap_dl_type = ctx.base_flow.encap_dl_type;
+        action_xlate_free_data(&ctx);
 
         if (subfacet->path == SF_NOT_INSTALLED) {
             /* This only happens if the datapath reported an error when we
@@ -4983,6 +4994,7 @@ facet_revalidate(struct facet *facet)
     free(new_actions);
 
     facet_update_rule(facet, new_rule);
+    action_xlate_free_data(&ctx);
 }
 
 /* Updates 'facet''s used time.  Caller is responsible for calling
@@ -5058,6 +5070,7 @@ flow_push_stats(struct rule_dpif *rule,
     ctx.resubmit_stats = stats;
     xlate_actions_for_side_effects(&ctx, rule->up.ofpacts,
                                    rule->up.ofpacts_len);
+    action_xlate_free_data(&ctx);
 }
 
 /* Subfacets. */
@@ -5574,6 +5587,7 @@ rule_dpif_execute(struct rule_dpif *rule, const struct flow *flow,
                           rule, stats.tcp_flags, packet);
     ctx.resubmit_stats = &stats;
     xlate_actions(&ctx, rule->up.ofpacts, rule->up.ofpacts_len, &odp_actions);
+    action_xlate_free_data(&ctx);
 
     execute_odp_actions(ofproto, flow, odp_actions.data,
                         odp_actions.size, packet);
@@ -5846,7 +5860,7 @@ compose_output_action__(struct action_xlate_ctx *ctx, uint16_t ofp_port,
 
     /* If 'struct flow' gets additional metadata, we'll need to zero it out
      * before traversing a patch port. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 20);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 21);
 
     if (!ofport) {
         xlate_report(ctx, "Nonexistent output port");
@@ -6153,16 +6167,79 @@ execute_controller_action(struct action_xlate_ctx *ctx, int len,
 }
 
 static void
+mpls_stack_init(struct action_xlate_ctx *ctx)
+{
+    size_t len = (ctx->flow.mpls_depth - 1) * MPLS_HLEN;
+
+    ovs_assert(ctx->packet && ctx->flow.mpls_depth);
+
+    if (ctx->mpls_stack) {
+        return;
+    }
+
+    ctx->mpls_stack = ofpbuf_new_with_headroom(len, MPLS_HLEN);
+    ofpbuf_push(ctx->mpls_stack, (char *)ctx->packet->l2_5 + MPLS_HLEN, len);
+}
+
+static void
+mpls_stack_push(struct action_xlate_ctx *ctx, ovs_be32 mpls_lse)
+{
+    if (ctx->packet && ctx->flow.mpls_depth) {
+        mpls_stack_init(ctx);
+        ofpbuf_push(ctx->mpls_stack, &ctx->flow.mpls_lse,
+                    sizeof ctx->flow.mpls_lse);
+    }
+    ctx->flow.mpls_lse = mpls_lse;
+    ctx->flow.mpls_depth++;
+}
+
+static ovs_be32
+mpls_stack_pop(struct action_xlate_ctx *ctx)
+{
+    ovs_be32 mpls_lse;
+
+    if (ctx->packet && ctx->flow.mpls_depth > 1) {
+        ovs_be32 *mpls_lse_p;
+
+        mpls_stack_init(ctx);
+        mpls_lse_p = ofpbuf_pull(ctx->mpls_stack, sizeof mpls_lse);
+        mpls_lse = *mpls_lse_p;
+    } else {
+        mpls_lse = htons(0);
+    }
+    ctx->flow.mpls_depth--;
+
+    return mpls_lse;
+}
+
+static ovs_be32
+mpls_stack_peek(struct action_xlate_ctx *ctx)
+{
+    ovs_be32 mpls_lse;
+
+    if (ctx->packet && ctx->flow.mpls_depth > 1) {
+        ovs_be32 *mpls_lse_p;
+
+        mpls_stack_init(ctx);
+        mpls_lse_p = ctx->mpls_stack->data;
+        mpls_lse = *mpls_lse_p;
+    } else {
+        mpls_lse = htons(0);
+    }
+
+    return mpls_lse;
+}
+
+static void
 execute_mpls_push_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
 {
+    ovs_be32 label;
+
     ovs_assert(eth_type_mpls(eth_type));
 
     if (ctx->flow.mpls_depth) {
-        ctx->flow.inner_mpls_lse = ctx->flow.mpls_lse;
-        ctx->flow.mpls_lse &= ~htonl(MPLS_BOS_MASK);
-        ctx->flow.mpls_depth++;
+        label = ctx->flow.mpls_lse & ~htonl(MPLS_BOS_MASK);
     } else {
-        ovs_be32 label;
         uint8_t tc, ttl;
 
         if (ctx->flow.dl_type == htons(ETH_TYPE_IPV6)) {
@@ -6172,10 +6249,10 @@ execute_mpls_push_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
         }
         tc = (ctx->flow.nw_tos & IP_DSCP_MASK) >> 2;
         ttl = ctx->flow.nw_ttl ? ctx->flow.nw_ttl : 0x40;
-        ctx->flow.mpls_lse = set_mpls_lse_values(ttl, tc, 1, label);
+        label = set_mpls_lse_values(ttl, tc, 1, label);
         ctx->flow.encap_dl_type = ctx->flow.dl_type;
-        ctx->flow.mpls_depth = 1;
     }
+    mpls_stack_push(ctx, label);
     ctx->flow.dl_type = eth_type;
 }
 
@@ -6200,9 +6277,7 @@ execute_mpls_pop_action(struct action_xlate_ctx *ctx, ovs_be16 eth_type)
         return true;
     }
 
-    ctx->flow.mpls_depth--;
-    ctx->flow.mpls_lse = ctx->flow.inner_mpls_lse;
-    ctx->flow.inner_mpls_lse = htonl(0);
+    ctx->flow.mpls_lse = mpls_stack_pop(ctx);
     ctx->flow.dl_type = eth_type;
     if (!ctx->flow.mpls_depth) {
         ctx->base_flow.encap_dl_type = ctx->flow.dl_type = eth_type;
@@ -6288,7 +6363,7 @@ execute_copy_ttl_out_action(struct action_xlate_ctx *ctx)
 
     if (ctx->flow.mpls_depth > 1) {
         /* MPLS -> MPLS */
-        ttl = mpls_lse_to_ttl(ctx->flow.inner_mpls_lse);
+        ttl = mpls_lse_to_ttl(mpls_stack_peek(ctx));
     } else {
         /* IP -> MPLS */
         ttl = ctx->flow.nw_ttl;
@@ -6822,6 +6897,12 @@ action_xlate_ctx_init(struct action_xlate_ctx *ctx,
     ctx->resubmit_hook = NULL;
     ctx->report_hook = NULL;
     ctx->resubmit_stats = NULL;
+    ctx->mpls_stack = NULL;
+}
+
+static void action_xlate_free_data(struct action_xlate_ctx *ctx)
+{
+    ofpbuf_delete(ctx->mpls_stack);
 }
 
 /* Translates the 'ofpacts_len' bytes of "struct ofpacts" starting at 'ofpacts'
@@ -7661,6 +7742,7 @@ packet_out(struct ofproto *ofproto_, struct ofpbuf *packet,
     ofpbuf_use_stub(&odp_actions,
                     odp_actions_stub, sizeof odp_actions_stub);
     xlate_actions(&ctx, ofpacts, ofpacts_len, &odp_actions);
+    action_xlate_free_data(&ctx);
     dpif_execute(ofproto->backer->dpif, key.data, key.size,
                  odp_actions.data, odp_actions.size, packet);
     ofpbuf_uninit(&odp_actions);
@@ -8095,6 +8177,7 @@ ofproto_trace(struct ofproto_dpif *ofproto, const struct flow *flow,
                             "the special slow-path processing.");
             }
         }
+        action_xlate_free_data(&trace.ctx);
     }
 }
 
