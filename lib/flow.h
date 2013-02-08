@@ -68,6 +68,8 @@ struct flow_tnl {
     uint8_t ip_ttl;
 };
 
+#define FLOW_ZEROS_SIZE 4
+
 /*
 * A flow in the network.
 *
@@ -92,10 +94,8 @@ struct flow {
                                    is the datapath port number. */
     uint32_t skb_mark;          /* Packet mark. */
     ovs_be32 mpls_lse;          /* MPLS label stack entry. */
-    uint16_t mpls_depth;        /* Depth of MPLS stack. */
     ovs_be16 vlan_tci;          /* If 802.1Q, TCI | VLAN_CFI; otherwise 0. */
     ovs_be16 dl_type;           /* Ethernet frame type. */
-    ovs_be16 encap_dl_type;     /* MPLS encapsulated Ethernet frame type */
     ovs_be16 tp_src;            /* TCP/UDP source port. */
     ovs_be16 tp_dst;            /* TCP/UDP destination port. */
     uint8_t dl_src[6];          /* Ethernet source address. */
@@ -106,11 +106,15 @@ struct flow {
     uint8_t arp_tha[6];         /* ARP/ND target hardware address. */
     uint8_t nw_ttl;             /* IP TTL/Hop Limit. */
     uint8_t nw_frag;            /* FLOW_FRAG_* flags. */
-    uint8_t zeros[4];
-};
-BUILD_ASSERT_DECL(sizeof(struct flow) % 4 == 0);
+    uint8_t zeros[FLOW_ZEROS_SIZE];
 
-#define FLOW_U32S (sizeof(struct flow) / 4)
+    /* Place values to be excluded from flow comparison here */
+    uint16_t mpls_depth;        /* Depth of MPLS stack. */
+    ovs_be16 encap_dl_type;     /* MPLS encapsulated Ethernet frame type */
+};
+BUILD_ASSERT_DECL((offsetof(struct flow, zeros) + FLOW_ZEROS_SIZE) % 4 == 0);
+
+#define FLOW_U32S ((offsetof(struct flow, zeros) + FLOW_ZEROS_SIZE) / 4)
 
 /* Remember to update FLOW_WC_SEQ when changing 'struct flow'. */
 BUILD_ASSERT_DECL(sizeof(struct flow) == sizeof(struct flow_tnl) + 160 &&
@@ -168,7 +172,7 @@ void flow_compose(struct ofpbuf *, const struct flow *);
 static inline int
 flow_compare_3way(const struct flow *a, const struct flow *b)
 {
-    return memcmp(a, b, sizeof *a);
+    return memcmp(a, b, offsetof(struct flow, zeros));
 }
 
 static inline bool
@@ -180,7 +184,7 @@ flow_equal(const struct flow *a, const struct flow *b)
 static inline size_t
 flow_hash(const struct flow *flow, uint32_t basis)
 {
-    return hash_words((const uint32_t *) flow, sizeof *flow / 4, basis);
+    return hash_words((const uint32_t *) flow, FLOW_U32S, basis);
 }
 
 uint32_t flow_hash_in_minimask(const struct flow *, const struct minimask *,
