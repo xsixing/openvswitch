@@ -345,6 +345,7 @@ struct subfacet {
     struct hmap_node hmap_node; /* In struct ofproto_dpif 'subfacets' list. */
     struct list list_node;      /* In struct facet's 'facets' list. */
     struct facet *facet;        /* Owning facet. */
+    struct facet *inner_facet;
 
     /* Key.
      *
@@ -3574,6 +3575,7 @@ handle_flow_miss_with_facet(struct flow_miss *miss, struct facet *facet,
                 if (!facet) {
                     facet = facet_create(rule, flow, inner_hash);
                 }
+                subfacet->inner_facet = facet;
             }
         }
 
@@ -4827,6 +4829,22 @@ facet_check_consistency(struct facet *facet)
     return ok;
 }
 
+/* If the rule of 'facet' is already 'new_rule' then do nothing;
+ * Otherwise replace the rule of 'facet' with 'new_rule' */
+static void facet_update_rule(struct facet *facet, struct rule_dpif *new_rule)
+{
+
+    if (facet->rule != new_rule) {
+        COVERAGE_INC(facet_changed_rule);
+        list_remove(&facet->list_node);
+        list_push_back(&new_rule->facets, &facet->list_node);
+        facet->rule = new_rule;
+        facet->used = new_rule->up.created;
+        facet->prev_used = facet->used;
+    }
+}
+
+
 /* Re-searches the classifier for 'facet':
  *
  *   - If the rule found is different from 'facet''s current rule, moves
@@ -4870,11 +4888,18 @@ facet_revalidate(struct facet *facet)
     ofpbuf_use_stub(&odp_actions, odp_actions_stub, sizeof odp_actions_stub);
     LIST_FOR_EACH (subfacet, list_node, &facet->subfacets) {
         enum slow_path_reason slow;
+        struct rule_dpif *innermost_rule = new_rule;
+        const struct facet *innermost_facet = facet;
 
-        action_xlate_ctx_init(&ctx, ofproto, &facet->flow,
-                              subfacet->initial_tci, new_rule, 0, NULL);
-        xlate_actions(&ctx, new_rule->up.ofpacts, new_rule->up.ofpacts_len,
-                      &odp_actions);
+        if (subfacet->inner_facet) {
+            innermost_facet = subfacet->inner_facet;
+            innermost_rule = rule_dpif_lookup(ofproto, &innermost_facet->flow);
+        }
+
+        action_xlate_ctx_init(&ctx, ofproto, &innermost_facet->flow,
+                              subfacet->initial_tci, innermost_rule, 0, NULL);
+        xlate_actions(&ctx, innermost_rule->up.ofpacts,
+                      innermost_rule->up.ofpacts_len, &odp_actions);
 
         slow = (subfacet->slow & SLOW_MATCH) | ctx.slow;
         if (subfacet_should_install(subfacet, slow, &odp_actions)) {
@@ -4919,17 +4944,22 @@ facet_revalidate(struct facet *facet)
             subfacet->actions_len = new_actions[i].actions_len;
         }
         i++;
+
+        if (subfacet->inner_facet) {
+            struct facet *innermost_facet =  subfacet->inner_facet;
+            struct rule_dpif *innermost_rule;
+
+            /* This is already looked-up above, so it may
+             * be more efficient to save the result and use it here. */
+            innermost_rule = rule_dpif_lookup(ofproto,
+                                              &innermost_facet->flow);
+
+            facet_update_rule(innermost_facet, innermost_rule);
+        }
     }
     free(new_actions);
 
-    if (facet->rule != new_rule) {
-        COVERAGE_INC(facet_changed_rule);
-        list_remove(&facet->list_node);
-        list_push_back(&new_rule->facets, &facet->list_node);
-        facet->rule = new_rule;
-        facet->used = new_rule->up.created;
-        facet->prev_used = facet->used;
-    }
+    facet_update_rule(facet, new_rule);
 }
 
 /* Updates 'facet''s used time.  Caller is responsible for calling
