@@ -3566,10 +3566,14 @@ handle_flow_miss_with_facet(struct flow_miss *miss, struct facet *facet,
             if (ctx.base_flow.encap_dl_type != htons(0)) {
                 struct flow *flow = &ctx.inner_flow;
                 uint32_t inner_hash = flow_hash(flow, 0);
+                struct rule_dpif *rule = facet->rule;
 
                 handle_flow_miss_l3_extraction(miss, facet->rule, flow,
                                                &inner_key);
-                facet = facet_create(facet->rule, flow, inner_hash);
+                facet = facet_lookup_valid(ofproto, flow, inner_hash);
+                if (!facet) {
+                    facet = facet_create(rule, flow, inner_hash);
+                }
             }
         }
 
