@@ -1282,20 +1282,25 @@ int ovs_flow_from_nlattrs(struct sw_flow_key *swkey, int key_lenp[2],
 	if (eth_p_mpls(eth_type)) {
 		const struct ovs_key_mpls *mpls_key;
 
-		if (!(attrs & (1ULL << OVS_KEY_ATTR_MPLS)))
+		if (!(attrs & (1ULL << OVS_KEY_ATTR_MPLS))) {
+			printk("%s: MPLS", __func__);
 			return -EINVAL;
+		}
 		attrs &= ~(1ULL << OVS_KEY_ATTR_MPLS);
 
 		key_len = SW_FLOW_KEY_OFFSET(mpls.top_lse);
 		mpls_key = nla_data(a[OVS_KEY_ATTR_MPLS]);
 		swkey->mpls.top_lse = mpls_key->mpls_top_lse;
 
-		if (attrs & (1 << OVS_KEY_ATTR_IPV4))
-			eth_type = htons(ETH_P_IP);
-		if (attrs & (1 << OVS_KEY_ATTR_IPV6))
-			eth_type = htons(ETH_P_IPV6);
-		if (attrs & (1 << OVS_KEY_ATTR_ARP))
-			eth_type = htons(ETH_P_ARP);
+		if (attrs & (1 << OVS_KEY_ATTR_ENCAP)) {
+			attrs &= ~(1ULL << OVS_KEY_ATTR_ENCAP);
+			if (attrs & (1 << OVS_KEY_ATTR_IPV4))
+				eth_type = htons(ETH_P_IP);
+			if (attrs & (1 << OVS_KEY_ATTR_IPV6))
+				eth_type = htons(ETH_P_IPV6);
+			if (attrs & (1 << OVS_KEY_ATTR_ARP))
+				eth_type = htons(ETH_P_ARP);
+		}
 	}
 
 	key_lenp[0] = key_len;
