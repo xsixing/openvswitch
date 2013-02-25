@@ -1219,6 +1219,7 @@ set_field_to_ofast(const struct ofpact_reg_load *load,
     const struct mf_field *mf = load->dst.field;
     struct ofp12_action_set_field *oasf;
     uint16_t padded_value_len;
+    char *value;
 
     oasf = ofputil_put_OFPAT12_SET_FIELD(openflow);
     oasf->dst = htonl(mf->oxm_header);
@@ -1226,12 +1227,12 @@ set_field_to_ofast(const struct ofpact_reg_load *load,
     /* Set field is the only action of variable length (so far),
      * so handling the variable length portion is open-coded here */
     padded_value_len = ROUND_UP(mf->n_bytes, 8);
-    ofpbuf_put_uninit(openflow, padded_value_len);
+    value = ofpbuf_put_zeros(openflow, padded_value_len);
+    oasf = (struct ofp12_action_set_field *)value - 1;
     oasf->len = htons(ntohs(oasf->len) + padded_value_len);
-    memset(oasf + 1, 0, padded_value_len);
 
     bitwise_copy(&load->subvalue, sizeof load->subvalue, load->dst.ofs,
-                 oasf + 1, mf->n_bytes, load->dst.ofs, load->dst.n_bits);
+                 value, mf->n_bytes, load->dst.ofs, load->dst.n_bits);
     return;
 }
 
