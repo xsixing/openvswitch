@@ -377,9 +377,13 @@ ds_put_hex_dump(struct ds *ds, const void *buf_, size_t size,
       ds_put_format(ds, "%08jx  ", (uintmax_t) ROUND_DOWN(ofs, per_line));
       for (i = 0; i < start; i++)
         ds_put_format(ds, "   ");
-      for (; i < end; i++)
-        ds_put_format(ds, "%02hhx%c",
-                buf[i - start], i == per_line / 2 - 1? '-' : ' ');
+      for (; i < end; i++) {
+        ds_put_format(ds, "%02hhx", buf[i - start]);
+        if (i == per_line / 2 - 1)
+            ds_put_char(ds, '-');
+        else if (ascii || i != end - 1)
+            ds_put_char(ds, ' ');
+      }
       if (ascii)
         {
           for (; i < per_line; i++)
