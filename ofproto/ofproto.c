@@ -4758,27 +4758,31 @@ static void
 append_group_stats(struct ofgroup *group, struct list *replies)
     OVS_REQ_RDLOCK(group->rwlock)
 {
-    struct ofputil_group_stats ogs;
+    struct ofputil_group_stats *ogs;
     struct ofproto *ofproto = group->ofproto;
     long long int now = time_msec();
     int error;
 
+    ogs = xmalloc(sizeof *ogs + group->n_buckets *
+                  sizeof(struct bucket_counter));
+
     error = (ofproto->ofproto_class->group_get_stats
-             ? ofproto->ofproto_class->group_get_stats(group, &ogs)
+             ? ofproto->ofproto_class->group_get_stats(group, ogs)
              : EOPNOTSUPP);
     if (error) {
-        ogs.ref_count = UINT32_MAX;
-        ogs.packet_count = UINT64_MAX;
-        ogs.byte_count = UINT64_MAX;
-        ogs.n_buckets = group->n_buckets;
-        memset(ogs.bucket_stats, 0xff,
-               ogs.n_buckets * sizeof *ogs.bucket_stats);
+        struct bucket_counter *bc = (struct bucket_counter *)(ogs + 1);
+
+        ogs->ref_count = UINT32_MAX;
+        ogs->packet_count = UINT64_MAX;
+        ogs->byte_count = UINT64_MAX;
+        ogs->n_buckets = group->n_buckets;
+        memset(bc, 0xff, ogs->n_buckets * sizeof *bc);
     }
 
-    ogs.group_id = group->group_id;
-    calc_duration(group->created, now, &ogs.duration_sec, &ogs.duration_nsec);
+    ogs->group_id = group->group_id;
+    calc_duration(group->created, now, &ogs->duration_sec, &ogs->duration_nsec);
 
-    ofputil_append_group_stats(replies, &ogs);
+    ofputil_append_group_stats(replies, ogs);
 }
 
 static enum ofperr

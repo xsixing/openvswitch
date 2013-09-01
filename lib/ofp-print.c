@@ -2220,7 +2220,8 @@ ofp_print_group_stats(struct ds *s, const struct ofp_header *oh)
     ofpbuf_use_const(&b, oh, ntohs(oh->length));
 
     for (;;) {
-        struct ofputil_group_stats gs;
+        struct ofputil_group_stats *gs;
+        struct bucket_counter *bc;
         int retval;
 
         retval = ofputil_decode_group_stats_reply(&b, &gs);
@@ -2234,24 +2235,27 @@ ofp_print_group_stats(struct ds *s, const struct ofp_header *oh)
         ds_put_char(s, '\n');
 
         ds_put_char(s, ' ');
-        ds_put_format(s, "group_id=%"PRIu32",", gs.group_id);
+        ds_put_format(s, "group_id=%"PRIu32",", gs->group_id);
 
-        if (gs.duration_sec != UINT32_MAX) {
+        if (gs->duration_sec != UINT32_MAX) {
             ds_put_cstr(s, "duration=");
-            ofp_print_duration(s, gs.duration_sec, gs.duration_nsec);
+            ofp_print_duration(s, gs->duration_sec, gs->duration_nsec);
             ds_put_char(s, ',');
         }
-        ds_put_format(s, "ref_count=%"PRIu32",", gs.ref_count);
-        ds_put_format(s, "packet_count=%"PRIu64",", gs.packet_count);
-        ds_put_format(s, "byte_count=%"PRIu64"", gs.byte_count);
+        ds_put_format(s, "ref_count=%"PRIu32",", gs->ref_count);
+        ds_put_format(s, "packet_count=%"PRIu64",", gs->packet_count);
+        ds_put_format(s, "byte_count=%"PRIu64"", gs->byte_count);
 
-        for (bucket_i = 0; bucket_i < gs.n_buckets; bucket_i++) {
-            if (gs.bucket_stats[bucket_i].packet_count != UINT64_MAX) {
+        bc = (struct bucket_counter *)(gs + 1);
+        for (bucket_i = 0; bucket_i < gs->n_buckets; bucket_i++) {
+            if (bc[bucket_i].packet_count != UINT64_MAX) {
                 ds_put_format(s, ",bucket%"PRIu32":", bucket_i);
-                ds_put_format(s, "packet_count=%"PRIu64",", gs.bucket_stats[bucket_i].packet_count);
-                ds_put_format(s, "byte_count=%"PRIu64"", gs.bucket_stats[bucket_i].byte_count);
+                ds_put_format(s, "packet_count=%"PRIu64",", bc[bucket_i].packet_count);
+                ds_put_format(s, "byte_count=%"PRIu64"", bc[bucket_i].byte_count);
             }
         }
+
+        free(gs);
      }
 }
 

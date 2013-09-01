@@ -913,7 +913,7 @@ struct ofputil_group_stats {
     uint32_t duration_sec;      /* UINT32_MAX if unknown. */
     uint32_t duration_nsec;
     uint32_t n_buckets;
-    struct bucket_counter bucket_stats[16];
+    /* struct bucket_counter bucket_stats[0]; */
 };
 
 /* Group features reply, independent of protocol. */
@@ -951,7 +951,7 @@ enum ofperr ofputil_decode_group_mod(const struct ofp_header *,
                                      struct ofputil_group_mod *);
 
 int ofputil_decode_group_stats_reply(struct ofpbuf *,
-                                     struct ofputil_group_stats *);
+                                     struct ofputil_group_stats **);
 
 int ofputil_decode_group_desc_reply(struct ofputil_group_desc *,
                                     struct ofpbuf *);

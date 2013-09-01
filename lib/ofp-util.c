@@ -5333,6 +5333,7 @@ ofputil_group_stats_to_ofp11(const struct ofputil_group_stats *ogs,
                              size_t base_len, struct list *replies)
 {
     struct ofp11_bucket_counter *bc11;
+    const struct bucket_counter *obc = (struct bucket_counter *)(ogs + 1);
     struct ofp11_group_stats *gs11;
     size_t length;
     int i;
@@ -5349,10 +5350,8 @@ ofputil_group_stats_to_ofp11(const struct ofputil_group_stats *ogs,
 
     bc11 = (void *) (((uint8_t *) gs11) + base_len);
     for (i = 0; i < ogs->n_buckets; i++) {
-        const struct bucket_counter *obc = &ogs->bucket_stats[i];
-
-        bc11[i].packet_count = htonll(obc->packet_count);
-        bc11[i].byte_count = htonll(obc->byte_count);
+        bc11[i].packet_count = htonll(obc[i].packet_count);
+        bc11[i].byte_count = htonll(obc[i].byte_count);
     }
 
     return gs11;
@@ -5491,12 +5490,16 @@ ofputil_decode_group_stats_request(const struct ofp_header *request,
  * otherwise a positive errno value. */
 int
 ofputil_decode_group_stats_reply(struct ofpbuf *msg,
-                                 struct ofputil_group_stats *gs)
+                                 struct ofputil_group_stats **gs)
 {
     struct ofp11_bucket_counter *obc;
     struct ofp11_group_stats *ogs11;
+    struct bucket_counter *bc;
     enum ofpraw raw;
     enum ofperr error;
+    uint32_t duration_sec;
+    uint32_t duration_nsec;
+    size_t n_buckets;
     size_t base_len;
     size_t length;
     size_t i;
@@ -5515,7 +5518,7 @@ ofputil_decode_group_stats_reply(struct ofpbuf *msg,
     if (raw == OFPRAW_OFPST11_GROUP_REPLY) {
         base_len = sizeof *ogs11;
         ogs11 = ofpbuf_try_pull(msg, sizeof *ogs11);
-        gs->duration_sec = gs->duration_nsec = UINT32_MAX;
+        duration_sec = duration_nsec = UINT32_MAX;
     } else if (raw == OFPRAW_OFPST13_GROUP_REPLY) {
         struct ofp13_group_stats *ogs13;
 
@@ -5523,8 +5526,8 @@ ofputil_decode_group_stats_reply(struct ofpbuf *msg,
         ogs13 = ofpbuf_try_pull(msg, sizeof *ogs13);
         if (ogs13) {
             ogs11 = &ogs13->gs;
-            gs->duration_sec = ntohl(ogs13->duration_sec);
-            gs->duration_nsec = ntohl(ogs13->duration_nsec);
+            duration_sec = ntohl(ogs13->duration_sec);
+            duration_nsec = ntohl(ogs13->duration_nsec);
         } else {
             ogs11 = NULL;
         }
@@ -5544,22 +5547,28 @@ ofputil_decode_group_stats_reply(struct ofpbuf *msg,
         return OFPERR_OFPBRC_BAD_LEN;
     }
 
-    gs->group_id = ntohl(ogs11->group_id);
-    gs->ref_count = ntohl(ogs11->ref_count);
-    gs->packet_count = ntohll(ogs11->packet_count);
-    gs->byte_count = ntohll(ogs11->byte_count);
-
-    gs->n_buckets = (length - base_len) / sizeof *obc;
-    obc = ofpbuf_try_pull(msg, gs->n_buckets * sizeof *obc);
+    n_buckets = (length - base_len) / sizeof *obc;
+    obc = ofpbuf_try_pull(msg, n_buckets * sizeof *obc);
     if (!obc) {
         VLOG_WARN_RL(&bad_ofmsg_rl, "%s reply has %zu leftover bytes at end",
                      ofpraw_get_name(raw), msg->size);
         return OFPERR_OFPBRC_BAD_LEN;
     }
 
-    for (i = 0; i < gs->n_buckets; i++) {
-        gs->bucket_stats[i].packet_count = ntohll(obc[i].packet_count);
-        gs->bucket_stats[i].byte_count = ntohll(obc[i].byte_count);
+    *gs = xmalloc(sizeof **gs + sizeof *bc * n_buckets);
+
+    (*gs)->group_id = ntohl(ogs11->group_id);
+    (*gs)->ref_count = ntohl(ogs11->ref_count);
+    (*gs)->packet_count = ntohll(ogs11->packet_count);
+    (*gs)->byte_count = ntohll(ogs11->byte_count);
+    (*gs)->duration_sec = duration_sec;
+    (*gs)->duration_nsec = duration_nsec;
+    (*gs)->n_buckets = n_buckets;
+
+    bc = (struct bucket_counter *)((*gs) + 1);
+    for (i = 0; i < (*gs)->n_buckets; i++) {
+        bc[i].packet_count = ntohll(obc[i].packet_count);
+        bc[i].byte_count = ntohll(obc[i].byte_count);
     }
 
     return 0;
