@@ -4967,6 +4967,105 @@ rule_modify_actions(struct rule *rule_, bool reset_counters)
 
     complete_operation(rule);
 }
+
+static struct ofgroup *
+group_alloc(void)
+{
+    struct group_dpif *group = xzalloc(sizeof *group);
+    return &group->up;
+}
+
+static void
+group_dealloc(struct ofgroup *group_)
+{
+    struct group_dpif *group = group_dpif_cast(group_);
+    free(group);
+}
+
+static void
+group_construct_stats(struct group_dpif *group)
+    OVS_REQUIRES(&group->stats_mutex)
+{
+    group->packet_count = 0;
+    group->byte_count = 0;
+    if (!group->bucket_stats) {
+        group->bucket_stats = xcalloc(group->up.n_buckets,
+                                      sizeof *group->bucket_stats);
+    } else {
+        memset(group->bucket_stats, 0, group->up.n_buckets *
+               sizeof *group->bucket_stats);
+    }
+}
+
+static enum ofperr
+group_construct(struct ofgroup *group_)
+{
+    struct group_dpif *group = group_dpif_cast(group_);
+    ovs_mutex_init(&group->stats_mutex);
+    ovs_mutex_lock(&group->stats_mutex);
+    group_construct_stats(group);
+    ovs_mutex_unlock(&group->stats_mutex);
+    return 0;
+}
+
+static void
+group_destruct__(struct group_dpif *group)
+    OVS_REQUIRES(&group->stats_mutex)
+{
+    free(group->bucket_stats);
+    group->bucket_stats = NULL;
+}
+
+static void
+group_destruct(struct ofgroup *group_)
+{
+    struct group_dpif *group = group_dpif_cast(group_);
+    ovs_mutex_lock(&group->stats_mutex);
+    group_destruct__(group);
+    ovs_mutex_unlock(&group->stats_mutex);
+    ovs_mutex_destroy(&group->stats_mutex);
+}
+
+static enum ofperr
+group_modify(struct ofgroup *group_, struct ofgroup *victim_)
+{
+    struct group_dpif *group = group_dpif_cast(group_);
+    struct group_dpif *victim = group_dpif_cast(victim_);
+
+    ovs_mutex_lock(&group->stats_mutex);
+    if (victim->up.n_buckets < group->up.n_buckets) {
+        group_destruct__(group);
+    }
+    group_construct_stats(group);
+    ovs_mutex_unlock(&group->stats_mutex);
+
+    return 0;
+}
+
+
+static enum ofperr
+group_get_stats(const struct ofgroup *group_, struct ofputil_group_stats *ogs)
+{
+    struct group_dpif *group = group_dpif_cast(group_);
+    struct bucket_counter *bc = (struct bucket_counter *)(ogs + 1);
+
+    /* push_all_stats() can handle flow misses which, when using the learn
+     * action, can cause groups to be added and deleted.  This can corrupt our
+     * caller's datastructures which assume that group_get_stats() doesn't have
+     * an impact on the flow table. To be safe, we disable miss handling. */
+    push_all_stats__(false);
+
+    /* Start from historical data for 'group' itself that are no longer tracked
+     * in facets.  This counts, for example, facets that have expired. */
+    ovs_mutex_lock(&group->stats_mutex);
+    ogs->packet_count = group->packet_count;
+    ogs->byte_count = group->byte_count;
+    memcpy(bc, group->bucket_stats,
+           group->up.n_buckets * sizeof *group->bucket_stats);
+    ovs_mutex_unlock(&group->stats_mutex);
+
+    return 0;
+}
 
 /* Sends 'packet' out 'ofport'.
  * May modify 'packet'.
@@ -6384,10 +6483,10 @@ const struct ofproto_class ofproto_dpif_class = {
     NULL,                       /* meter_set */
     NULL,                       /* meter_get */
     NULL,                       /* meter_del */
-    NULL,                       /* group_alloc */
-    NULL,                       /* group_construct */
-    NULL,                       /* group_destruct */
-    NULL,                       /* group_dealloc */
-    NULL,                       /* group_modify */
-    NULL,                       /* group_get_stats */
+    group_alloc,                /* group_alloc */
+    group_construct,            /* group_construct */
+    group_destruct,             /* group_destruct */
+    group_dealloc,              /* group_dealloc */
+    group_modify,               /* group_modify */
+    group_get_stats,            /* group_get_stats */
 };

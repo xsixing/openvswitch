@@ -79,6 +79,28 @@ struct rule_dpif {
     uint64_t byte_count OVS_GUARDED;    /* Number of bytes received. */
 };
 
+struct group_dpif {
+    struct ofgroup up;
+
+    /* These statistics:
+     *
+     *   - Do include packets and bytes from facets that have been deleted or
+     *     whose own statistics have been folded into the rule.
+     *
+     *   - Do include packets and bytes sent "by hand" that were accounted to
+     *     the rule without any facet being involved (this is a rare corner
+     *     case in rule_execute()).
+     *
+     *   - Do not include packet or bytes that can be obtained from any facet's
+     *     packet_count or byte_count member or that can be obtained from the
+     *     datapath by, e.g., dpif_flow_get() for any subfacet.
+     */
+    struct ovs_mutex stats_mutex;
+    uint64_t packet_count OVS_GUARDED;  /* Number of packets received. */
+    uint64_t byte_count OVS_GUARDED;    /* Number of bytes received. */
+    struct bucket_counter *bucket_stats OVS_GUARDED;  /* Bucket statistics. */
+};
+
 static inline struct rule_dpif *rule_dpif_cast(const struct rule *rule)
 {
     return rule ? CONTAINER_OF(rule, struct rule_dpif, up) : NULL;
@@ -100,6 +122,11 @@ void rule_credit_stats(struct rule_dpif *, const struct dpif_flow_stats *);
 struct rule_dpif *choose_miss_rule(enum ofputil_port_config,
                                    struct rule_dpif *miss_rule,
                                    struct rule_dpif *no_packet_in_rule);
+
+static inline struct group_dpif *group_dpif_cast(const struct ofgroup *group)
+{
+    return group ? CONTAINER_OF(group, struct group_dpif, up) : NULL;
+}
 
 bool ofproto_has_vlan_splinters(const struct ofproto_dpif *);
 ofp_port_t vsp_realdev_to_vlandev(const struct ofproto_dpif *,
