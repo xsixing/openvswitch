@@ -164,6 +164,10 @@ struct xlate_ctx {
     odp_port_t sflow_odp_port;  /* Output port for composing sFlow action. */
     uint16_t user_cookie_offset;/* Used for user_action_cookie fixup. */
     bool exit;                  /* No further actions should be processed. */
+
+    struct list action_set;     /* Action set.
+                                 * An ordered list of struct ofpbuf
+                                 * containing ofpacts to add to the action. */
 };
 
 /* A controller may use OFPP_NONE as the ingress port to indicate that
@@ -2163,6 +2167,53 @@ may_receive(const struct xport *xport, struct xlate_ctx *ctx)
 }
 
 static void
+action_set_clear(struct xlate_ctx *ctx)
+{
+    ofpbuf_list_delete(&ctx->action_set);
+}
+
+static void
+action_set_add(struct xlate_ctx *ctx, struct ofpact *ofpacts,
+               size_t ofpacts_len)
+{
+    struct ofpbuf *new = xmalloc(sizeof *new);
+
+    ofpbuf_use_const(new, ofpacts, ofpacts_len);
+    list_init(&new->list_node);
+
+    list_push_back(&ctx->action_set, &new->list_node);
+}
+
+static void
+xlate_write_actions(struct xlate_ctx *ctx, const struct ofpact *a)
+{
+    struct ofpact_nest *on = ofpact_get_WRITE_ACTIONS(a);
+    action_set_add(ctx, on->actions, ofpact_nest_get_action_len(on));
+}
+
+static void
+xlate_action_set(struct xlate_ctx *ctx)
+{
+    struct ofpbuf ofpact_buf;
+
+    if (ctx->exit) {
+        action_set_clear(ctx);
+    }
+
+    if (list_is_empty(&ctx->action_set)) {
+        return;
+    }
+
+    ofpbuf_init(&ofpact_buf, 64);
+    ofpacts_list_to_action_set(&ofpact_buf, &ctx->action_set);
+
+    action_set_clear(ctx);
+    do_xlate_actions(ofpact_buf.data, ofpact_buf.size, ctx);
+
+    ofpbuf_uninit(&ofpact_buf);
+}
+
+static void
 do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                  struct xlate_ctx *ctx)
 {
@@ -2367,11 +2418,11 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_CLEAR_ACTIONS:
-            /* XXX
-             * Nothing to do because writa-actions is not supported for now.
-             * When writa-actions is supported, clear-actions also must
-             * be supported at the same time.
-             */
+            action_set_clear(ctx);
+            break;
+
+        case OFPACT_WRITE_ACTIONS:
+            xlate_write_actions(ctx, a);
             break;
 
         case OFPACT_WRITE_METADATA:
@@ -2391,6 +2442,9 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             ovs_assert(ctx->table_id < ogt->table_id);
             xlate_table_action(ctx, ctx->xin->flow.in_port.ofp_port,
                                ogt->table_id, true);
+            /* Just in case xlate_action_set() wasn't called indirectly
+             * by xlate_table_action() */
+            action_set_clear(ctx);
             break;
         }
 
@@ -2399,6 +2453,8 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
         }
     }
+
+    xlate_action_set(ctx);
 }
 
 void
@@ -2597,6 +2653,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     ctx.orig_skb_priority = flow->skb_priority;
     ctx.table_id = 0;
     ctx.exit = false;
+    list_init(&ctx.action_set);
 
     if (xin->ofpacts) {
         ofpacts = xin->ofpacts;
