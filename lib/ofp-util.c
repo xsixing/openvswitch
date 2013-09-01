@@ -5557,6 +5557,7 @@ ofputil_decode_group_stats_reply(struct ofpbuf *msg,
         return OFPERR_OFPBRC_BAD_LEN;
     }
 
+    gs->bucket_stats = xmalloc(gs->n_buckets * sizeof *gs->bucket_stats);
     for (i = 0; i < gs->n_buckets; i++) {
         gs->bucket_stats[i].packet_count = ntohll(obc[i].packet_count);
         gs->bucket_stats[i].byte_count = ntohll(obc[i].byte_count);

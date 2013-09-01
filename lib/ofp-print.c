@@ -2223,11 +2223,13 @@ ofp_print_group_stats(struct ds *s, const struct ofp_header *oh)
         struct ofputil_group_stats gs;
         int retval;
 
+        gs.bucket_stats = NULL;
         retval = ofputil_decode_group_stats_reply(&b, &gs);
         if (retval) {
             if (retval != EOF) {
                 ds_put_cstr(s, " ***parse error***");
             }
+            free(gs.bucket_stats);
             break;
         }
 
@@ -2252,6 +2254,8 @@ ofp_print_group_stats(struct ds *s, const struct ofp_header *oh)
                 ds_put_format(s, "byte_count=%"PRIu64"", gs.bucket_stats[bucket_i].byte_count);
             }
         }
+
+        free(gs.bucket_stats);
      }
 }
 
