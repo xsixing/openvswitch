@@ -99,8 +99,8 @@
                                                                     \
     /* Instructions */                                              \
     DEFINE_OFPACT(METER,           ofpact_meter,         ofpact)    \
-    /* XXX Write-Actions */                                         \
     DEFINE_OFPACT(CLEAR_ACTIONS,   ofpact_null,          ofpact)    \
+    DEFINE_OFPACT(WRITE_ACTIONS,   ofpact_nest,          ofpact)    \
     DEFINE_OFPACT(WRITE_METADATA,  ofpact_metadata,      ofpact)    \
     DEFINE_OFPACT(GOTO_TABLE,      ofpact_goto_table,    ofpact)
 
@@ -384,6 +384,15 @@ struct ofpact_meter {
     uint32_t meter_id;
 };
 
+/* OFPACT_WRITE_ACTIONS.
+ *
+ * Used for OFPIT11_WRITE_ACTIONS. */
+struct ofpact_nest {
+    struct ofpact ofpact;
+    uint8_t pad[OFPACT_ALIGN(sizeof(struct ofpact)) - sizeof(struct ofpact)];
+    struct ofpact actions[];
+};
+
 /* OFPACT_RESUBMIT.
  *
  * Used for NXAST_RESUBMIT, NXAST_RESUBMIT_TABLE. */
@@ -498,6 +507,16 @@ struct ofpact_group {
     struct ofpact ofpact;
     uint32_t group_id;
 };
+
+/* Helper */
+static inline size_t
+ofpact_nest_get_action_len(const struct ofpact_nest *on)
+{
+    return on->ofpact.len - offsetof(typeof(*on), actions);
+}
+
+/* Convert Action List to Action Set */
+void ofpacts_list_to_action_set(struct ofpbuf *out, const struct list *in);
 
 /* Converting OpenFlow to ofpacts. */
 enum ofperr ofpacts_pull_openflow10(struct ofpbuf *openflow,
@@ -665,5 +684,4 @@ enum ovs_instruction_type ovs_instruction_type_from_ofpact_type(
 
 void ofpact_set_field_init(struct ofpact_reg_load *load,
                            const struct mf_field *mf, const void *src);
-
 #endif /* ofp-actions.h */
