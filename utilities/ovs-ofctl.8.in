@@ -1289,6 +1289,57 @@ to \fBactions=\fR field.
 .IP \fBclear_actions\fR
 Clears all the actions in the action set immediately.
 .
+.IP \fBwrite_actions(\fR[\fIaction\fR][\fB,\fIaction\fR...]\fB)
+Append the specific action(s) to the action set. The syntax of actions are same
+to \fBactions=\fR field. The action set may be cleared using
+\fBclear_actions\fR. The action set carried between flow tables.
+The actions in the action set are executed when the actions of a flow do
+not include a \fBgoto_table\fR action and there
+is no \fBexit\fR action persent in the \fBresubmit\fR call stack.
+.
+The actions in the action set are applied in the following order:
+.
+.IP
+\fBPOP actions: \fBstrip_vlan\fR and \fBpop_mpls\fR.
+The pop actions may be applied in any order relative to each other.
+.IP
+\fBpush_mpls\fR
+.IP
+\fBpush_vlan\fR
+.IP
+\fBDecrement TTL actions\fR: \fBdec_ttl\fR and \fBdec_mpls_ttl\fR.
+The decrement actions may be applied in any order relative to each other.
+.IP
+\fBSet actions\fR.
+Where multiple set actions modify the same field of same part of a field
+the last modification takes effect. Internally set actions are all
+applied. This is in keeping with the desired set action behaviour. But
+has an unwanted side effect of compositing multiple actions if they
+modify different regions of the same field.
+The following are considered set actions:
+.IP
+ \fBload\fR
+ \fBmod_dl_dst\fR
+ \fBmod_dl_src\fR
+ \fBmod_nw_dst\fR
+ \fBmod_nw_src\fR
+ \fBmod_nw_tos\fR
+ \fBmod_tp_dst\fR
+ \fBmod_tp_src\fR
+ \fBmod_vlan_pcp\fR
+ \fBmod_vlan_vid\fR
+ \fBset_field\fR
+ \fBset_tunnel64\fR
+ \fBset_tunnel\fR
+.RE
+.IP
+\fBset_queue\fR
+.IP
+\fBgroup\fR
+.IP
+\fBoutput\fR
+Not added if a group action is present in the action set.
+.
 .IP \fBwrite_metadata\fB:\fIvalue\fR[/\fImask\fR]
 Updates the metadata field for the flow. If \fImask\fR is omitted, the
 metadata field is set exactly to \fIvalue\fR; if \fImask\fR is specified, then
