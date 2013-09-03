@@ -5066,6 +5066,31 @@ group_get_stats(const struct ofgroup *group_, struct ofputil_group_stats *ogs)
 
     return 0;
 }
+
+bool
+group_dpif_lookup(struct ofproto_dpif *ofproto, uint32_t group_id,
+                  struct group_dpif **group)
+    OVS_TRY_RDLOCK(true, (*group)->up.rwlock)
+{
+    struct ofgroup *ofgroup;
+    bool found;
+
+    *group = NULL;
+    found = ofproto_group_lookup(&ofproto->up, group_id, &ofgroup);
+    *group = found ?  group_dpif_cast(ofgroup) : NULL;
+
+    return found;
+}
+
+void
+group_release(struct group_dpif *group)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
+{
+    if (group) {
+        ofproto_group_release(&group->up);
+    }
+}
+
 
 /* Sends 'packet' out 'ofport'.
  * May modify 'packet'.

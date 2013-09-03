@@ -128,6 +128,12 @@ static inline struct group_dpif *group_dpif_cast(const struct ofgroup *group)
     return group ? CONTAINER_OF(group, struct group_dpif, up) : NULL;
 }
 
+bool group_dpif_lookup(struct ofproto_dpif *ofproto, uint32_t group_id,
+                       struct group_dpif **group)
+    OVS_TRY_RDLOCK(true, (*group)->up.rwlock);
+
+void group_release(struct group_dpif *group) OVS_NO_THREAD_SAFETY_ANALYSIS;
+
 bool ofproto_has_vlan_splinters(const struct ofproto_dpif *);
 ofp_port_t vsp_realdev_to_vlandev(const struct ofproto_dpif *,
                                   ofp_port_t realdev_ofp_port,

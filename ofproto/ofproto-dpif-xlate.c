@@ -1690,6 +1690,26 @@ xlate_recursively(struct xlate_ctx *ctx, struct rule_dpif *rule)
 }
 
 static void
+xlate_miss(struct xlate_ctx *ctx)
+{
+        struct xport *xport;
+        struct rule_dpif *rule;
+
+        /* XXX
+         * check if table configuration flags
+         * OFPTC_TABLE_MISS_CONTROLLER, default.
+         * OFPTC_TABLE_MISS_CONTINUE,
+         * OFPTC_TABLE_MISS_DROP
+         * When OF1.0, OFPTC_TABLE_MISS_CONTINUE is used. What to do? */
+        xport = get_ofp_port(ctx->xbridge, ctx->xin->flow.in_port.ofp_port);
+        rule = choose_miss_rule(xport ? xport->config : 0,
+                                ctx->xbridge->miss_rule,
+                                ctx->xbridge->no_packet_in_rule);
+        ovs_rwlock_rdlock(&rule->up.evict);
+        xlate_recursively(ctx, rule);
+}
+
+static void
 xlate_table_action(struct xlate_ctx *ctx,
                    ofp_port_t in_port, uint8_t table_id, bool may_packet_in)
 {
@@ -1717,23 +1737,89 @@ xlate_table_action(struct xlate_ctx *ctx,
         if (got_rule) {
             xlate_recursively(ctx, rule);
         } else if (may_packet_in) {
-            struct xport *xport;
-
-            /* XXX
-             * check if table configuration flags
-             * OFPTC_TABLE_MISS_CONTROLLER, default.
-             * OFPTC_TABLE_MISS_CONTINUE,
-             * OFPTC_TABLE_MISS_DROP
-             * When OF1.0, OFPTC_TABLE_MISS_CONTINUE is used. What to do? */
-            xport = get_ofp_port(ctx->xbridge, ctx->xin->flow.in_port.ofp_port);
-            rule = choose_miss_rule(xport ? xport->config : 0,
-                                    ctx->xbridge->miss_rule,
-                                    ctx->xbridge->no_packet_in_rule);
-            ovs_rwlock_rdlock(&rule->up.evict);
-            xlate_recursively(ctx, rule);
+            xlate_miss(ctx);
         }
 
         ctx->table_id = old_table_id;
+    } else {
+        static struct vlog_rate_limit recurse_rl = VLOG_RATE_LIMIT_INIT(1, 1);
+
+        VLOG_ERR_RL(&recurse_rl, "resubmit actions recursed over %d times",
+                    MAX_RESUBMIT_RECURSION);
+    }
+}
+
+static void
+xlate_group_bucket(struct xlate_ctx *ctx, struct ofputil_bucket *bucket)
+{
+    struct ofpbuf actions_out, actions_in_buf;
+    struct list actions_in = LIST_INITIALIZER(&actions_in);
+
+    ofpbuf_use_const(&actions_in_buf, bucket->ofpacts, bucket->ofpacts_len);
+    list_init(&actions_in_buf.list_node);
+    list_insert(&actions_in, &actions_in_buf.list_node);
+
+    ofpbuf_init(&actions_out, actions_in_buf.size);
+
+    ofpacts_list_to_action_set(&actions_out, &actions_in);
+    ctx->recurse++;
+    do_xlate_actions(actions_out.data, actions_out.size, ctx);
+    ctx->recurse--;
+
+    ofpbuf_uninit(&actions_out);
+    ofpbuf_uninit(&actions_in_buf);
+}
+
+static void
+xlate_all_group(struct xlate_ctx *ctx, struct group_dpif *group)
+    OVS_REQ_RDLOCK(&group->up.rwlock)
+{
+    struct ofputil_bucket *bucket;
+    struct flow old_base_flow = ctx->base_flow;
+
+    LIST_FOR_EACH(bucket, list_node, &group->up.buckets) {
+        xlate_group_bucket(ctx, bucket);
+        /* Roll back base_flow to previous state.
+         * This is equivalent to cloning the packet for each bucket.
+         *
+         * As a side effect any subsequently applied actions will
+         * also effectively be applied to a clone of the packet taken
+         * just before applying the all or indirect group. */
+        ctx->base_flow = old_base_flow;
+    }
+}
+
+static void
+xlate_group_action__(struct xlate_ctx *ctx, struct group_dpif *group)
+    OVS_RELEASES(&group->up.rwlock)
+{
+    switch (group->up.type) {
+    case OFPGT11_ALL:
+    case OFPGT11_INDIRECT:
+        xlate_all_group(ctx, group);
+        break;
+    case OFPGT11_SELECT:
+    case OFPGT11_FF:
+    default:
+        /* XXX not yet implemented */
+        break;
+    }
+    group_release(group);
+}
+
+static void
+xlate_group_action(struct xlate_ctx *ctx, uint32_t group_id)
+{
+    if (ctx->recurse < MAX_RESUBMIT_RECURSION) {
+        struct group_dpif *group;
+        bool got_group;
+
+        got_group = group_dpif_lookup(ctx->xbridge->ofproto, group_id, &group);
+        if (got_group) {
+            xlate_group_action__(ctx, group);
+        } else {
+            xlate_miss(ctx);
+        }
     } else {
         static struct vlog_rate_limit recurse_rl = VLOG_RATE_LIMIT_INIT(1, 1);
 
@@ -2236,7 +2322,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_GROUP:
-            /* XXX not yet implemented */
+            xlate_group_action(ctx, ofpact_get_GROUP(a)->group_id);
             break;
 
         case OFPACT_CONTROLLER:
