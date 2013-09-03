@@ -460,6 +460,8 @@ ofproto_create(const char *datapath_name, const char *datapath_type,
     ofproto->min_mtu = INT_MAX;
     ovs_rwlock_init(&ofproto->groups_rwlock);
     hmap_init(&ofproto->groups);
+    ofproto->ogf.max_groups[OFPGT11_ALL] = OFPG_MAX;
+    ofproto->ogf.max_groups[OFPGT11_INDIRECT] = OFPG_MAX;
 
     error = ofproto->ofproto_class->construct(ofproto);
     if (error) {
