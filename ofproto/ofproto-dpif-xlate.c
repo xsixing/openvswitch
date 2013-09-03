@@ -186,6 +186,7 @@ struct xlate_ctx {
      * When translation is otherwise complete, ofpacts_execute_action_set()
      * converts it to a set of "struct ofpact"s that can be translated into
      * datapath actions.   */
+    bool xlating_action_set;    /* True if the action set is being translated. */
     struct ofpbuf action_set;   /* Action set. */
     uint64_t action_set_stub[1024 / 8];
 };
@@ -1776,6 +1777,97 @@ xlate_table_action(struct xlate_ctx *ctx,
 }
 
 static void
+xlate_group_bucket_set(struct xlate_ctx *ctx,
+                       const struct ofputil_bucket *bucket)
+{
+    uint64_t action_list_stub[1024 / 64];
+    struct ofpbuf action_list, action_set;
+
+    ofpbuf_use_const(&action_set, bucket->ofpacts, bucket->ofpacts_len);
+    ofpbuf_use_stub(&action_list, action_list_stub, sizeof action_list_stub);
+
+    ofpacts_execute_action_set(&action_list, &action_set);
+    ctx->recurse++;
+    do_xlate_actions(action_list.data, action_list.size, ctx);
+    ctx->recurse--;
+
+    ofpbuf_uninit(&action_set);
+    ofpbuf_uninit(&action_list);
+}
+
+static void
+xlate_group_bucket(struct xlate_ctx *ctx, const struct ofputil_bucket *bucket)
+{
+    if (ctx->xlating_action_set) {
+        xlate_group_bucket_set(ctx, bucket);
+    } else {
+        do_xlate_actions(bucket->ofpacts, bucket->ofpacts_len, ctx);
+    }
+}
+
+static void
+xlate_all_group(struct xlate_ctx *ctx, struct group_dpif *group)
+{
+    const struct ofputil_bucket *bucket;
+    const struct list *buckets;
+    struct flow old_flow = ctx->xin->flow;
+
+    group_dpif_get_buckets(group, &buckets);
+
+    LIST_FOR_EACH(bucket, list_node, buckets) {
+        xlate_group_bucket(ctx, bucket);
+        /* Roll back flow to previous state.
+         * This is equivalent to cloning the packet for each bucket.
+         *
+         * As a side effect any subsequently applied actions will
+         * also effectively be applied to a clone of the packet taken
+         * just before applying the all or indirect group. */
+        ctx->xin->flow = old_flow;
+    }
+}
+
+static void
+xlate_group_action__(struct xlate_ctx *ctx, struct group_dpif *group)
+{
+    switch (group_dpif_get_type(group)) {
+    case OFPGT11_ALL:
+    case OFPGT11_INDIRECT:
+        xlate_all_group(ctx, group);
+        break;
+    case OFPGT11_SELECT:
+    case OFPGT11_FF:
+    default:
+        /* XXX not yet implemented */
+        break;
+    }
+    group_dpif_release(group);
+}
+
+static bool
+xlate_group_action(struct xlate_ctx *ctx, uint32_t group_id)
+{
+    if (ctx->recurse < MAX_RESUBMIT_RECURSION) {
+        struct group_dpif *group;
+        bool got_group;
+
+        got_group = group_dpif_lookup(ctx->xbridge->ofproto, group_id, &group);
+        if (got_group) {
+            xlate_group_action__(ctx, group);
+        } else {
+            return true;
+        }
+    } else {
+        static struct vlog_rate_limit recurse_rl = VLOG_RATE_LIMIT_INIT(1, 1);
+
+        VLOG_ERR_RL(&recurse_rl, "resubmit actions recursed over %d times",
+                    MAX_RESUBMIT_RECURSION);
+        return true;
+    }
+
+    return false;
+}
+
+static void
 xlate_ofpact_resubmit(struct xlate_ctx *ctx,
                       const struct ofpact_resubmit *resubmit)
 {
@@ -2271,7 +2363,9 @@ xlate_action_set(struct xlate_ctx *ctx)
 
     ofpbuf_use_stub(&action_list, action_list_stub, sizeof action_list_stub);
     ofpacts_execute_action_set(&action_list, &ctx->action_set);
+    ctx->xlating_action_set = true;
     do_xlate_actions(action_list.data, action_list.size, ctx);
+    ctx->xlating_action_set = false;
     ofpbuf_uninit(&action_list);
 }
 
@@ -2298,7 +2392,9 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_GROUP:
-            /* XXX not yet implemented */
+            if (xlate_group_action(ctx, ofpact_get_GROUP(a)->group_id)) {
+                return;
+            }
             break;
 
         case OFPACT_CONTROLLER:
@@ -2765,6 +2861,7 @@ xlate_actions__(struct xlate_in *xin, struct xlate_out *xout)
     ctx.orig_skb_priority = flow->skb_priority;
     ctx.table_id = 0;
     ctx.exit = false;
+    ctx.xlating_action_set = false;
     ctx.mpls_depth_delta = 0;
 
     if (!xin->ofpacts && !ctx.rule) {
