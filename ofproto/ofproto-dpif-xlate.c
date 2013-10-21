@@ -771,7 +771,8 @@ bucket_is_alive(const struct xlate_ctx *ctx,
         return false;
     }
 
-    return (bucket->watch_port != OFPP_ANY &&
+    return !ofputil_bucket_has_liveness(bucket) ||
+           (bucket->watch_port != OFPP_ANY &&
             odp_port_is_alive(ctx, bucket->watch_port)) ||
            (bucket->watch_group != OFPG_ANY &&
             group_is_alive(ctx, bucket->watch_group, depth + 1));
@@ -792,6 +793,22 @@ group_first_live_bucket(const struct xlate_ctx *ctx,
     }
 
     return NULL;
+}
+
+static void
+group_all_live_buckets(const struct xlate_ctx *ctx,
+                       const struct group_dpif *group,
+                       struct ofpbuf *live_buckets)
+{
+    struct ofputil_bucket *bucket;
+    const struct list *buckets;
+
+    group_dpif_get_buckets(group, &buckets);
+    LIST_FOR_EACH (bucket, list_node, buckets) {
+        if (bucket_is_alive(ctx, bucket, 0)) {
+            ofpbuf_push(live_buckets, &bucket, sizeof bucket);
+        }
+    }
 }
 
 static bool
@@ -1912,6 +1929,33 @@ xlate_ff_group(struct xlate_ctx *ctx, struct group_dpif *group)
 }
 
 static void
+xlate_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
+{
+    struct flow_wildcards *wc = &ctx->xout->wc;
+    const struct ofputil_bucket **bucket;
+    struct ofputil_bucket *stub[1024 / sizeof *bucket];
+    struct ofpbuf live_buckets;
+    uint32_t hash;
+
+    ofpbuf_use_stub(&live_buckets, stub, sizeof stub);
+    group_all_live_buckets(ctx, group, &live_buckets);
+    if (live_buckets.size == 0) {
+        goto out;
+    }
+
+    memset(&wc->masks.dl_dst, 0xff, sizeof wc->masks.dl_dst);
+
+    hash = hash_bytes(ctx->xin->flow.dl_dst, sizeof ctx->xin->flow.dl_dst, 0);
+    bucket = ofpbuf_at_assert(&live_buckets,
+                              (hash % (live_buckets.size / sizeof *bucket)) *
+                               sizeof *bucket, sizeof *bucket);
+    xlate_group_bucket(ctx, *bucket);
+
+out:
+    ofpbuf_uninit(&live_buckets);
+}
+
+static void
 xlate_group_action__(struct xlate_ctx *ctx, struct group_dpif *group)
 {
     switch (group_dpif_get_type(group)) {
@@ -1920,7 +1964,7 @@ xlate_group_action__(struct xlate_ctx *ctx, struct group_dpif *group)
         xlate_all_group(ctx, group);
         break;
     case OFPGT11_SELECT:
-        /* XXX not yet implemented */
+        xlate_select_group(ctx, group);
         break;
     case OFPGT11_FF:
         xlate_ff_group(ctx, group);
