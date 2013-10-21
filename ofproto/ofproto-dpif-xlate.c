@@ -795,20 +795,24 @@ group_first_live_bucket(const struct xlate_ctx *ctx,
     return NULL;
 }
 
-static void
+static unsigned
 group_all_live_buckets(const struct xlate_ctx *ctx,
                        const struct group_dpif *group,
                        struct ofpbuf *live_buckets)
 {
     struct ofputil_bucket *bucket;
     const struct list *buckets;
+    unsigned weight = 0;
 
     group_dpif_get_buckets(group, &buckets);
     LIST_FOR_EACH (bucket, list_node, buckets) {
         if (bucket_is_alive(ctx, bucket, 0)) {
             ofpbuf_push(live_buckets, &bucket, sizeof bucket);
+            weight += bucket->weight;
         }
     }
+
+    return weight;
 }
 
 static bool
@@ -1936,19 +1940,27 @@ xlate_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
     struct ofputil_bucket *stub[1024 / sizeof *bucket];
     struct ofpbuf live_buckets;
     uint32_t hash;
+    unsigned weight;
+    size_t offset;
 
     ofpbuf_use_stub(&live_buckets, stub, sizeof stub);
-    group_all_live_buckets(ctx, group, &live_buckets);
-    if (live_buckets.size == 0) {
+    weight = group_all_live_buckets(ctx, group, &live_buckets);
+    if (weight == 0) {
         goto out;
     }
 
     memset(&wc->masks.dl_dst, 0xff, sizeof wc->masks.dl_dst);
 
     hash = hash_bytes(ctx->xin->flow.dl_dst, sizeof ctx->xin->flow.dl_dst, 0);
-    bucket = ofpbuf_at_assert(&live_buckets,
-                              (hash % (live_buckets.size / sizeof *bucket)) *
-                               sizeof *bucket, sizeof *bucket);
+    weight = hash % weight;
+
+    for (offset = 0; offset < live_buckets.size; offset += sizeof *bucket) {
+        bucket = ofpbuf_at_assert(&live_buckets, offset, sizeof *bucket);
+        if (weight < (*bucket)->weight) {
+            break;
+        }
+        weight -= (*bucket)->weight;
+    }
     xlate_group_bucket(ctx, *bucket);
 
 out:
