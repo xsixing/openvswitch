@@ -1714,11 +1714,11 @@ xlate_recursively(struct xlate_ctx *ctx, struct rule_dpif *rule)
     ctx->recurse--;
 }
 
-static void
-xlate_table_action(struct xlate_ctx *ctx,
-                   ofp_port_t in_port, uint8_t table_id, bool may_packet_in)
+static bool
+xlate_resubmit_resource_check(struct xlate_ctx *ctx)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+    bool ret = false;
 
     if (ctx->recurse >= MAX_RESUBMIT_RECURSION) {
         VLOG_ERR_RL(&rl, "resubmit actions recursed over %d times",
@@ -1730,6 +1730,17 @@ xlate_table_action(struct xlate_ctx *ctx,
     } else if (ctx->stack.size >= 65536) {
         VLOG_ERR_RL(&rl, "resubmits yielded over 64 kB of stack");
     } else {
+        ret = true;
+    }
+
+    return ret;
+}
+
+static void
+xlate_table_action(struct xlate_ctx *ctx,
+                   ofp_port_t in_port, uint8_t table_id, bool may_packet_in)
+{
+    if (xlate_resubmit_resource_check(ctx)) {
         struct rule_dpif *rule;
         ofp_port_t old_in_port = ctx->xin->flow.in_port.ofp_port;
         uint8_t old_table_id = ctx->table_id;
