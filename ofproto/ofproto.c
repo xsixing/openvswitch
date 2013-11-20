@@ -5773,17 +5773,19 @@ handle_group_mod(struct ofconn *ofconn, const struct ofp_header *oh)
     }
 }
 
-enum ofp_table_config
-table_get_config(const struct ofproto *ofproto, uint8_t table_id)
+enum ofproto_table_config
+ofproto_table_get_config(const struct ofproto *ofproto, uint8_t table_id)
 {
     unsigned int value;
     atomic_read(&ofproto->tables[table_id].config, &value);
-    return (enum ofp_table_config)value;
+    return (enum ofproto_table_config) value;
 }
 
 static enum ofperr
 table_mod(struct ofproto *ofproto, const struct ofputil_table_mod *tm)
 {
+    unsigned value = (unsigned)tm->config;
+
     /* Only accept currently supported configurations */
     if (tm->config & ~OFPTC_TABLE_MISS_MASK) {
         return OFPERR_OFPTMFC_BAD_CONFIG;
@@ -5792,14 +5794,12 @@ table_mod(struct ofproto *ofproto, const struct ofputil_table_mod *tm)
     if (tm->table_id == OFPTT_ALL) {
         int i;
         for (i = 0; i < ofproto->n_tables; i++) {
-            atomic_store(&ofproto->tables[i].config,
-                         (unsigned int)tm->config);
+            atomic_store(&ofproto->tables[i].config, value);
         }
     } else if (!check_table_id(ofproto, tm->table_id)) {
         return OFPERR_OFPTMFC_BAD_TABLE;
     } else {
-        atomic_store(&ofproto->tables[tm->table_id].config,
-                     (unsigned int)tm->config);
+        atomic_store(&ofproto->tables[tm->table_id].config, value);
     }
 
     return 0;
@@ -6655,7 +6655,7 @@ oftable_init(struct oftable *table)
     memset(table, 0, sizeof *table);
     classifier_init(&table->cls, flow_segment_u32s);
     table->max_flows = UINT_MAX;
-    atomic_init(&table->config, (unsigned int)OFPTC_TABLE_MISS_CONTROLLER);
+    atomic_init(&table->config, (unsigned)OFPROTO_TABLE_MISS_DEFAULT);
 }
 
 /* Destroys 'table', including its classifier and eviction groups.
