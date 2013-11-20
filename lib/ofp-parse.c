@@ -1840,16 +1840,16 @@ parse_ofp_table_mod(struct ofputil_table_mod *tm, const char *table_id,
     }
 
     if (strcmp(flow_miss_handling, "controller") == 0) {
-        tm->config = OFPTC11_TABLE_MISS_CONTROLLER;
+        tm->config = OFPTC_TABLE_MISS_CONTROLLER;
     } else if (strcmp(flow_miss_handling, "continue") == 0) {
-        tm->config = OFPTC11_TABLE_MISS_CONTINUE;
+        tm->config = OFPTC_TABLE_MISS_CONTINUE;
     } else if (strcmp(flow_miss_handling, "drop") == 0) {
-        tm->config = OFPTC11_TABLE_MISS_DROP;
+        tm->config = OFPTC_TABLE_MISS_DROP;
     } else {
         return xasprintf("invalid flow_miss_handling %s", flow_miss_handling);
     }
 
-    if (tm->table_id == 0xfe && tm->config == OFPTC11_TABLE_MISS_CONTINUE) {
+    if (tm->table_id == 0xfe && tm->config == OFPTC_TABLE_MISS_CONTINUE) {
         return xstrdup("last table's flow miss handling can not be continue");
     }
 
