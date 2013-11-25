@@ -124,6 +124,7 @@ static bool match_validate(const struct sw_flow_match *match,
 
 	/* Always allowed mask fields. */
 	mask_allowed |= ((1ULL << OVS_KEY_ATTR_TUNNEL)
+		       | (1ULL << OVS_KEY_ATTR_IN_PHY_PORT)
 		       | (1ULL << OVS_KEY_ATTR_IN_PORT)
 		       | (1ULL << OVS_KEY_ATTR_ETHERTYPE));
 
@@ -234,6 +235,7 @@ static bool match_validate(const struct sw_flow_match *match,
 static const int ovs_key_lens[OVS_KEY_ATTR_MAX + 1] = {
 	[OVS_KEY_ATTR_ENCAP] = -1,
 	[OVS_KEY_ATTR_PRIORITY] = sizeof(u32),
+	[OVS_KEY_ATTR_IN_PHY_PORT] = sizeof(u32),
 	[OVS_KEY_ATTR_IN_PORT] = sizeof(u32),
 	[OVS_KEY_ATTR_SKB_MARK] = sizeof(u32),
 	[OVS_KEY_ATTR_ETHERNET] = sizeof(struct ovs_key_ethernet),
@@ -448,18 +450,12 @@ static int ipv4_tun_to_nlattr(struct sk_buff *skb,
 	return 0;
 }
 
-
-static int metadata_from_nlattrs(struct sw_flow_match *match,  u64 *attrs,
-				 const struct nlattr **a, bool is_mask)
+static int port_from_nlattrs(struct sw_flow_match *match,
+			     enum ovs_key_attr key, u64 *attrs,
+			     const struct nlattr **a, bool is_mask)
 {
-	if (*attrs & (1ULL << OVS_KEY_ATTR_PRIORITY)) {
-		SW_FLOW_KEY_PUT(match, phy.priority,
-			  nla_get_u32(a[OVS_KEY_ATTR_PRIORITY]), is_mask);
-		*attrs &= ~(1ULL << OVS_KEY_ATTR_PRIORITY);
-	}
-
-	if (*attrs & (1ULL << OVS_KEY_ATTR_IN_PORT)) {
-		u32 in_port = nla_get_u32(a[OVS_KEY_ATTR_IN_PORT]);
+	if (*attrs & (1ULL << key)) {
+		u32 in_port = nla_get_u32(a[key]);
 
 		if (is_mask)
 			in_port = 0xffffffff; /* Always exact match in_port. */
@@ -467,10 +463,32 @@ static int metadata_from_nlattrs(struct sw_flow_match *match,  u64 *attrs,
 			return -EINVAL;
 
 		SW_FLOW_KEY_PUT(match, phy.in_port, in_port, is_mask);
-		*attrs &= ~(1ULL << OVS_KEY_ATTR_IN_PORT);
-	} else if (!is_mask) {
+		*attrs &= ~(1ULL << key);
+	} else if (!is_mask && key == OVS_KEY_ATTR_IN_PORT) {
 		SW_FLOW_KEY_PUT(match, phy.in_port, DP_MAX_PORTS, is_mask);
 	}
+
+	return 0;
+}
+
+static int metadata_from_nlattrs(struct sw_flow_match *match,  u64 *attrs,
+				 const struct nlattr **a, bool is_mask)
+{
+	int err;
+
+	if (*attrs & (1ULL << OVS_KEY_ATTR_PRIORITY)) {
+		SW_FLOW_KEY_PUT(match, phy.priority,
+			  nla_get_u32(a[OVS_KEY_ATTR_PRIORITY]), is_mask);
+		*attrs &= ~(1ULL << OVS_KEY_ATTR_PRIORITY);
+	}
+
+	err = port_from_nlattrs(match, OVS_KEY_ATTR_IN_PORT, attrs, a, is_mask);
+	if (err)
+		return err;
+	err = port_from_nlattrs(match, OVS_KEY_ATTR_IN_PHY_PORT,
+				attrs, a, is_mask);
+	if (err)
+		return err;
 
 	if (*attrs & (1ULL << OVS_KEY_ATTR_SKB_MARK)) {
 		uint32_t mark = nla_get_u32(a[OVS_KEY_ATTR_SKB_MARK]);
@@ -899,12 +917,31 @@ int ovs_nla_get_flow_metadata(struct sw_flow *flow,
 	return 0;
 }
 
+static int ovs_nla_put_port(enum ovs_key_attr key, u16 swkey_port,
+			    u16 output_port, bool is_mask, struct sk_buff *skb)
+{
+	if (swkey_port == DP_MAX_PORTS) {
+		if (is_mask && (output_port == 0xffff))
+			if (nla_put_u32(skb, key, 0xffffffff))
+				return -EMSGSIZE;
+	} else {
+		u16 upper_u16;
+		upper_u16 = !is_mask ? 0 : 0xffff;
+
+		if (nla_put_u32(skb, key, (upper_u16 << 16) | output_port))
+			return -EMSGSIZE;
+	}
+
+	return 0;
+}
+
 int ovs_nla_put_flow(const struct sw_flow_key *swkey,
 		     const struct sw_flow_key *output, struct sk_buff *skb)
 {
 	struct ovs_key_ethernet *eth_key;
 	struct nlattr *nla, *encap;
 	bool is_mask = (swkey != output);
+	int err;
 
 	if (nla_put_u32(skb, OVS_KEY_ATTR_PRIORITY, output->phy.priority))
 		goto nla_put_failure;
@@ -913,18 +950,14 @@ int ovs_nla_put_flow(const struct sw_flow_key *swkey,
 	    ipv4_tun_to_nlattr(skb, &swkey->tun_key, &output->tun_key))
 		goto nla_put_failure;
 
-	if (swkey->phy.in_port == DP_MAX_PORTS) {
-		if (is_mask && (output->phy.in_port == 0xffff))
-			if (nla_put_u32(skb, OVS_KEY_ATTR_IN_PORT, 0xffffffff))
-				goto nla_put_failure;
-	} else {
-		u16 upper_u16;
-		upper_u16 = !is_mask ? 0 : 0xffff;
-
-		if (nla_put_u32(skb, OVS_KEY_ATTR_IN_PORT,
-				(upper_u16 << 16) | output->phy.in_port))
-			goto nla_put_failure;
-	}
+	err = ovs_nla_put_port(OVS_KEY_ATTR_IN_PHY_PORT, swkey->phy.in_port,
+			       output->phy.in_port, is_mask, skb);
+	if (err)
+		goto nla_put_failure;
+	err = ovs_nla_put_port(OVS_KEY_ATTR_IN_PORT, swkey->phy.in_port,
+			       output->phy.in_port, is_mask, skb);
+	if (err)
+		goto nla_put_failure;
 
 	if (nla_put_u32(skb, OVS_KEY_ATTR_SKB_MARK, output->phy.skb_mark))
 		goto nla_put_failure;
