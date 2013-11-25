@@ -102,6 +102,7 @@ ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
     case OVS_KEY_ATTR_PRIORITY: return "skb_priority";
     case OVS_KEY_ATTR_SKB_MARK: return "skb_mark";
     case OVS_KEY_ATTR_TUNNEL: return "tunnel";
+    case OVS_KEY_ATTR_IN_PHY_PORT: return "in_phy_port";
     case OVS_KEY_ATTR_IN_PORT: return "in_port";
     case OVS_KEY_ATTR_ETHERNET: return "eth";
     case OVS_KEY_ATTR_VLAN: return "vlan";
@@ -717,6 +718,7 @@ odp_flow_key_attr_len(uint16_t type)
     case OVS_KEY_ATTR_PRIORITY: return 4;
     case OVS_KEY_ATTR_SKB_MARK: return 4;
     case OVS_KEY_ATTR_TUNNEL: return -2;
+    case OVS_KEY_ATTR_IN_PHY_PORT: return 4;
     case OVS_KEY_ATTR_IN_PORT: return 4;
     case OVS_KEY_ATTR_ETHERNET: return sizeof(struct ovs_key_ethernet);
     case OVS_KEY_ATTR_VLAN: return sizeof(ovs_be16);
@@ -1057,6 +1059,7 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
         }
         break;
 
+    case OVS_KEY_ATTR_IN_PHY_PORT:
     case OVS_KEY_ATTR_IN_PORT:
         if (portno_names && verbose && is_exact) {
             char *name = odp_portno_names_get(portno_names,

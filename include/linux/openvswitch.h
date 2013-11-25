@@ -300,6 +300,7 @@ enum ovs_key_attr {
 	OVS_KEY_ATTR_IPV4_TUNNEL,  /* struct ovs_key_ipv4_tunnel */
 #endif
 
+	OVS_KEY_ATTR_IN_PHY_PORT = 61,  /* u32 OVS phy dp port number */
 	OVS_KEY_ATTR_MPLS = 62, /* array of struct ovs_key_mpls.
 				 * The implementation may restrict
 				 * the accepted length of the array. */
