@@ -417,6 +417,11 @@ int ovs_flow_extract(struct sk_buff *skb, u16 in_port, struct sw_flow_key *key)
 	if (OVS_CB(skb)->tun_key)
 		memcpy(&key->tun_key, OVS_CB(skb)->tun_key, sizeof(key->tun_key));
 	key->phy.in_port = in_port;
+	/* This conveniently ignores the question of how to determine
+	 * the in_phy_port for cases such as tunnels where it may differ
+	 * from in_port but likely not be a port present in the bridge.
+	 */
+	key->phy.in_phy_port = in_port;
 	key->phy.skb_mark = skb->mark;
 
 	skb_reset_mac_header(skb);
