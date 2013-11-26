@@ -572,7 +572,7 @@ nx_put_raw(struct ofpbuf *b, bool oxm, const struct match *match,
     int match_len;
     int i;
 
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 23);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 24);
 
     /* Metadata. */
     if (match->wc.masks.in_port.ofp_port) {
@@ -581,6 +581,14 @@ nx_put_raw(struct ofpbuf *b, bool oxm, const struct match *match,
             nxm_put_32(b, OXM_OF_IN_PORT, ofputil_port_to_ofp11(in_port));
         } else {
             nxm_put_16(b, NXM_OF_IN_PORT, htons(ofp_to_u16(in_port)));
+        }
+    }
+    if (match->wc.masks.in_phy_port.ofp_port) {
+        ofp_port_t in_phy_port = flow->in_phy_port.ofp_port;
+        if (oxm) {
+            nxm_put_32(b, OXM_OF_IN_PORT, ofputil_port_to_ofp11(in_phy_port));
+        } else {
+            nxm_put_16(b, NXM_OF_IN_PORT, htons(ofp_to_u16(in_phy_port)));
         }
     }
 

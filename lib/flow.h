@@ -36,7 +36,7 @@ struct ofpbuf;
 /* This sequence number should be incremented whenever anything involving flows
  * or the wildcarding of flows changes.  This will cause build assertion
  * failures in places which likely need to be updated. */
-#define FLOW_WC_SEQ 23
+#define FLOW_WC_SEQ 24
 
 #define FLOW_N_REGS 8
 BUILD_ASSERT_DECL(FLOW_N_REGS <= NXM_NX_MAX_REGS);
@@ -100,6 +100,10 @@ struct flow {
     uint32_t skb_priority;      /* Packet priority for QoS. */
     uint32_t pkt_mark;          /* Packet mark. */
     union flow_in_port in_port; /* Input port.*/
+    union flow_in_port in_phy_port; /* Physical input port.
+                                     * For a tunneled packet this is the port
+                                     * that the encapsulated packet was recieved
+                                     * on. Zero otherwise. */
 
     /* L2 */
     uint8_t dl_src[6];          /* Ethernet source address. */
@@ -122,7 +126,7 @@ struct flow {
     uint8_t arp_sha[6];         /* ARP/ND source hardware address. */
     uint8_t arp_tha[6];         /* ARP/ND target hardware address. */
     ovs_be16 tcp_flags;         /* TCP flags. With L3 to avoid matching L4. */
-    ovs_be16 pad;               /* Padding. */
+    ovs_be16 pad[3];            /* Padding. */
     /* L4 */
     ovs_be16 tp_src;            /* TCP/UDP/SCTP source port. */
     ovs_be16 tp_dst;            /* TCP/UDP/SCTP destination port.
@@ -134,8 +138,8 @@ BUILD_ASSERT_DECL(sizeof(struct flow) % 4 == 0);
 
 /* Remember to update FLOW_WC_SEQ when changing 'struct flow'. */
 BUILD_ASSERT_DECL(offsetof(struct flow, tp_dst) + 2
-                  == sizeof(struct flow_tnl) + 156
-                  && FLOW_WC_SEQ == 23);
+                  == sizeof(struct flow_tnl) + 164
+                  && FLOW_WC_SEQ == 24);
 
 /* Incremental points at which flow classification may be performed in
  * segments.
@@ -167,6 +171,7 @@ struct flow_metadata {
     uint32_t regs[FLOW_N_REGS];      /* Registers. */
     uint32_t pkt_mark;               /* Packet mark. */
     ofp_port_t in_port;              /* OpenFlow port or zero. */
+    ofp_port_t in_phy_port;          /* Physical OpenFlow port or zero. */
 };
 
 void flow_extract(struct ofpbuf *, uint32_t priority, uint32_t mark,

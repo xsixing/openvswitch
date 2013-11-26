@@ -84,7 +84,7 @@ ofputil_netmask_to_wcbits(ovs_be32 netmask)
 void
 ofputil_wildcard_from_ofpfw10(uint32_t ofpfw, struct flow_wildcards *wc)
 {
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 23);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 24);
 
     /* Initialize most of wc. */
     flow_wildcards_init_catchall(wc);
@@ -3132,6 +3132,7 @@ ofputil_decode_packet_in_finish(struct ofputil_packet_in *pin,
     pin->packet_len = b->size;
 
     pin->fmd.in_port = match->flow.in_port.ofp_port;
+    pin->fmd.in_phy_port = match->flow.in_phy_port.ofp_port;
     pin->fmd.tun_id = match->flow.tunnel.tun_id;
     pin->fmd.tun_src = match->flow.tunnel.ip_src;
     pin->fmd.tun_dst = match->flow.tunnel.ip_dst;
@@ -3193,6 +3194,7 @@ ofputil_decode_packet_in(struct ofputil_packet_in *pin,
         pin->packet_len = b.size;
 
         pin->fmd.in_port = u16_to_ofp(ntohs(opi->in_port));
+        pin->fmd.in_phy_port = 0;
         pin->reason = opi->reason;
         pin->buffer_id = ntohl(opi->buffer_id);
         pin->total_len = ntohs(opi->total_len);

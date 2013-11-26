@@ -842,7 +842,7 @@ match_format(const struct match *match, struct ds *s, unsigned int priority)
 
     int i;
 
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 23);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 24);
 
     if (priority != OFP_DEFAULT_PRIORITY) {
         ds_put_format(s, "priority=%u,", priority);
@@ -944,6 +944,11 @@ match_format(const struct match *match, struct ds *s, unsigned int priority)
     if (wc->masks.in_port.ofp_port) {
         ds_put_cstr(s, "in_port=");
         ofputil_format_port(f->in_port.ofp_port, s);
+        ds_put_char(s, ',');
+    }
+    if (wc->masks.in_phy_port.ofp_port) {
+        ds_put_cstr(s, "in_phy_port=");
+        ofputil_format_port(f->in_phy_port.ofp_port, s);
         ds_put_char(s, ',');
     }
     if (wc->masks.vlan_tci) {

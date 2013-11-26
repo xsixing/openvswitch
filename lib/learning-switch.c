@@ -576,6 +576,7 @@ process_packet_in(struct lswitch *sw, const struct ofp_header *oh)
     ofpbuf_use_const(&pkt, pi.packet, pi.packet_len);
     in_port_.ofp_port = pi.fmd.in_port;
     flow_extract(&pkt, 0, 0, NULL, &in_port_, &flow);
+    flow.in_phy_port.ofp_port = pi.fmd.in_phy_port;
     flow.tunnel.tun_id = pi.fmd.tun_id;
 
     /* Choose output port. */

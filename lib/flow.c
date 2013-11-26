@@ -399,6 +399,7 @@ flow_extract(struct ofpbuf *packet, uint32_t skb_priority, uint32_t pkt_mark,
     }
     if (in_port) {
         flow->in_port = *in_port;
+        flow->in_phy_port = *in_port;
     }
     flow->skb_priority = skb_priority;
     flow->pkt_mark = pkt_mark;
@@ -523,7 +524,7 @@ flow_zero_wildcards(struct flow *flow, const struct flow_wildcards *wildcards)
 void
 flow_get_metadata(const struct flow *flow, struct flow_metadata *fmd)
 {
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 23);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 24);
 
     fmd->tun_id = flow->tunnel.tun_id;
     fmd->tun_src = flow->tunnel.ip_src;
@@ -532,6 +533,7 @@ flow_get_metadata(const struct flow *flow, struct flow_metadata *fmd)
     memcpy(fmd->regs, flow->regs, sizeof fmd->regs);
     fmd->pkt_mark = flow->pkt_mark;
     fmd->in_port = flow->in_port.ofp_port;
+    fmd->in_phy_port = flow->in_phy_port.ofp_port;
 }
 
 char *

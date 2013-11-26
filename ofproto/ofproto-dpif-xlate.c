@@ -1663,7 +1663,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
 
     /* If 'struct flow' gets additional metadata, we'll need to zero it out
      * before traversing a patch port. */
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 23);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 24);
 
     if (!xport) {
         xlate_report(ctx, "Nonexistent output port");
@@ -1687,7 +1687,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
         enum slow_path_reason special;
 
         ctx->xbridge = peer->xbridge;
-        flow->in_port.ofp_port = peer->ofp_port;
+        flow->in_port.ofp_port = flow->in_phy_port.ofp_port = peer->ofp_port;
         flow->metadata = htonll(0);
         memset(&flow->tunnel, 0, sizeof flow->tunnel);
         memset(flow->regs, 0, sizeof flow->regs);

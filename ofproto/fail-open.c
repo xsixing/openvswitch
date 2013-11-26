@@ -129,6 +129,7 @@ send_bogus_packet_ins(struct fail_open *fo)
     pin.up.packet_len = b.size;
     pin.up.reason = OFPR_NO_MATCH;
     pin.up.fmd.in_port = OFPP_LOCAL;
+    pin.up.fmd.in_phy_port = 0;
     pin.send_len = b.size;
     pin.generated_by_table_miss = false;
     connmgr_send_packet_in(fo->connmgr, &pin);
