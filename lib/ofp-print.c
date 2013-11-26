@@ -112,6 +112,11 @@ ofp_print_packet_in(struct ds *string, const struct ofp_header *oh,
     ds_put_format(string, " total_len=%"PRIuSIZE" in_port=", pin.total_len);
     ofputil_format_port(pin.fmd.in_port, string);
 
+    if (pin.fmd.in_phy_port != 0) {
+        ds_put_format(string, " in_phy_port=");
+        ofputil_format_port(pin.fmd.in_phy_port, string);
+    }
+
     if (pin.fmd.tun_id != htonll(0)) {
         ds_put_format(string, " tun_id=0x%"PRIx64, ntohll(pin.fmd.tun_id));
     }
