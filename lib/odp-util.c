@@ -2618,10 +2618,10 @@ unencap:
 }
 
 /* Appends a representation of 'flow' as OVS_KEY_ATTR_* attributes to 'buf'.
- * 'flow->in_port' is ignored (since it is likely to be an OpenFlow port
- * number rather than a datapath port number).  Instead, if 'odp_in_port'
- * is anything other than ODPP_NONE, it is included in 'buf' as the input
- * port.
+ * 'flow->in_port' and 'flow->in_phy_port' are is ignored (since they are
+ * likely to be OpenFlow port numbers rather than datapath port
+ * numbers).  Instead, if 'odp_in_port' is anything other than ODPP_NONE, it
+ * is included in 'buf' as the input and input phy ports.
  *
  * 'buf' must have at least ODPUTIL_FLOW_KEY_BYTES bytes of space, or be
  * capable of being expanded to allow for that much space. */
@@ -3176,6 +3176,14 @@ odp_flow_key_to_flow__(const struct nlattr *key, size_t key_len,
         flow->in_port.odp_port = ODPP_NONE;
     }
 
+    if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_IN_PHY_PORT)) {
+        flow->in_phy_port.odp_port
+            = nl_attr_get_odp_port(attrs[OVS_KEY_ATTR_IN_PHY_PORT]);
+        expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_IN_PHY_PORT;
+    } else if (!is_mask) {
+        flow->in_phy_port.odp_port = ODPP_NONE;
+    }
+
     /* Ethernet header. */
     if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_ETHERNET)) {
         const struct ovs_key_ethernet *eth_key;
@@ -3217,9 +3225,9 @@ odp_flow_key_to_flow__(const struct nlattr *key, size_t key_len,
  * structure in 'flow'.  Returns an ODP_FIT_* value that indicates how well
  * 'key' fits our expectations for what a flow key should contain.
  *
- * The 'in_port' will be the datapath's understanding of the port.  The
- * caller will need to translate with odp_port_to_ofp_port() if the
- * OpenFlow port is needed.
+ * The 'in_port' and 'in_phy_port' will be the datapath's understanding of
+ * the port.  The caller will need to translate with odp_port_to_ofp_port()
+ * if the OpenFlow port is needed.
  *
  * This function doesn't take the packet itself as an argument because none of
  * the currently understood OVS_KEY_ATTR_* attributes require it.  Currently,
