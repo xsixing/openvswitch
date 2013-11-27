@@ -272,6 +272,7 @@ update_rules(struct in_band *ib)
         /* (a) Allow DHCP requests sent from the local port. */
         match_init_catchall(&match);
         match_set_in_port(&match, OFPP_LOCAL);
+        match_set_in_phy_port(&match, OFPP_LOCAL);
         match_set_dl_type(&match, htons(ETH_TYPE_IP));
         match_set_dl_src(&match, ib->local_mac);
         match_set_nw_proto(&match, IPPROTO_UDP);

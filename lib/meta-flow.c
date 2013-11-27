@@ -148,6 +148,17 @@ const struct mf_field mf_fields[MFF_N_IDS] = {
         OFPUTIL_P_OF11_UP,
         OFPUTIL_P_NONE,
     }, {
+        MFF_IN_PHY_PORT, "in_phy_port", NULL,
+        MF_FIELD_SIZES(be16),
+        MFM_NONE,
+        MFS_OFP_PORT,
+        MFP_NONE,
+        true,
+        OXM_OF_IN_PHY_PORT, "OXM_OF_IN_PHY_PORT",
+        OXM_OF_IN_PHY_PORT, "OXM_OF_IN_PHY_PORT",
+        OFPUTIL_P_NXM_OXM_ANY,
+        OFPUTIL_P_NONE,
+    }, {
         MFF_SKB_PRIORITY, "skb_priority", NULL,
         MF_FIELD_SIZES(be32),
         MFM_NONE,
@@ -837,6 +848,8 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
     case MFF_IN_PORT:
     case MFF_IN_PORT_OXM:
         return !wc->masks.in_port.ofp_port;
+    case MFF_IN_PHY_PORT:
+        return !wc->masks.in_phy_port.ofp_port;
     case MFF_SKB_PRIORITY:
         return !wc->masks.skb_priority;
     case MFF_PKT_MARK:
@@ -1090,6 +1103,7 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
     case MFF_TUN_FLAGS:
     case MFF_METADATA:
     case MFF_IN_PORT:
+    case MFF_IN_PHY_PORT:
     case MFF_SKB_PRIORITY:
     case MFF_PKT_MARK:
     CASE_MFF_REGS:
@@ -1203,6 +1217,9 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
         break;
     case MFF_IN_PORT_OXM:
         value->be32 = ofputil_port_to_ofp11(flow->in_port.ofp_port);
+        break;
+    case MFF_IN_PHY_PORT:
+        value->be32 = ofputil_port_to_ofp11(flow->in_phy_port.ofp_port);
         break;
 
     case MFF_SKB_PRIORITY:
@@ -1398,6 +1415,13 @@ mf_set_value(const struct mf_field *mf,
         ofp_port_t port;
         ofputil_port_from_ofp11(value->be32, &port);
         match_set_in_port(match, port);
+        break;
+    }
+
+    case MFF_IN_PHY_PORT: {
+        ofp_port_t port;
+        ofputil_port_from_ofp11(value->be32, &port);
+        match_set_in_phy_port(match, port);
         break;
     }
 
@@ -1614,6 +1638,13 @@ mf_set_flow_value(const struct mf_field *mf,
         break;
     }
 
+    case MFF_IN_PHY_PORT: {
+        ofp_port_t port;
+        ofputil_port_from_ofp11(value->be32, &port);
+        flow->in_phy_port.ofp_port = port;
+        break;
+    }
+
     case MFF_SKB_PRIORITY:
         flow->skb_priority = ntohl(value->be32);
         break;
@@ -1821,6 +1852,11 @@ mf_set_wild(const struct mf_field *mf, struct match *match)
         match->wc.masks.in_port.ofp_port = 0;
         break;
 
+    case MFF_IN_PHY_PORT:
+        match->flow.in_phy_port.ofp_port = 0;
+        match->wc.masks.in_phy_port.ofp_port = 0;
+        break;
+
     case MFF_SKB_PRIORITY:
         match->flow.skb_priority = 0;
         match->wc.masks.skb_priority = 0;
@@ -2006,6 +2042,7 @@ mf_set(const struct mf_field *mf,
     switch (mf->id) {
     case MFF_IN_PORT:
     case MFF_IN_PORT_OXM:
+    case MFF_IN_PHY_PORT:
     case MFF_SKB_PRIORITY:
     case MFF_ETH_TYPE:
     case MFF_DL_VLAN:
@@ -2230,6 +2267,7 @@ mf_random_value(const struct mf_field *mf, union mf_value *value)
     case MFF_TUN_FLAGS:
     case MFF_METADATA:
     case MFF_IN_PORT:
+    case MFF_IN_PHY_PORT:
     case MFF_PKT_MARK:
     case MFF_SKB_PRIORITY:
     CASE_MFF_REGS:

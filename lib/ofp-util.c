@@ -3260,6 +3260,7 @@ ofputil_packet_in_to_match(const struct ofputil_packet_in *pin,
     }
 
     match_set_in_port(match, pin->fmd.in_port);
+    match_set_in_phy_port(match, pin->fmd.in_phy_port);
 }
 
 /* Converts abstract ofputil_packet_in 'pin' into a PACKET_IN message

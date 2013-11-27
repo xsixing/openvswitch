@@ -272,6 +272,13 @@ match_set_in_port(struct match *match, ofp_port_t ofp_port)
 }
 
 void
+match_set_in_phy_port(struct match *match, ofp_port_t ofp_port)
+{
+    match->wc.masks.in_phy_port.ofp_port = u16_to_ofp(UINT16_MAX);
+    match->flow.in_phy_port.ofp_port = ofp_port;
+}
+
+void
 match_set_skb_priority(struct match *match, uint32_t skb_priority)
 {
     match->wc.masks.skb_priority = UINT32_MAX;

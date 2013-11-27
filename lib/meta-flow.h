@@ -42,6 +42,7 @@ enum OVS_PACKED_ENUM mf_field_id {
     MFF_METADATA,               /* be64 */
     MFF_IN_PORT,                /* be16 */
     MFF_IN_PORT_OXM,            /* be32 */
+    MFF_IN_PHY_PORT,            /* be32 */
     MFF_SKB_PRIORITY,           /* be32 */
     MFF_PKT_MARK,               /* be32 */
 
