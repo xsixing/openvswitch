@@ -1552,6 +1552,76 @@ mpls_lse_from_components(int mpls_label, int mpls_tc, int mpls_ttl, int mpls_bos
 }
 
 static int
+parse_odp_key_mask_port(const char *s, const struct simap *port_names,
+                        enum ovs_key_attr attr,
+                        struct ofpbuf *key, struct ofpbuf *mask)
+{
+    {
+        uint32_t in_port;
+        uint32_t in_port_mask;
+        const char *template, *mask_template;
+        int n = -1;
+
+        if (attr == OVS_KEY_ATTR_IN_PORT) {
+            template = "in_port(%"SCNi32")%n";
+            mask_template = "in_port(%"SCNi32"/%"SCNi32")%n";
+        } else if (attr == OVS_KEY_ATTR_IN_PHY_PORT) {
+            template = "in_phy_port(%"SCNi32")%n";
+            mask_template = "in_phy_port(%"SCNi32"/%"SCNi32")%n";
+        } else {
+            NOT_REACHED();
+        }
+
+        if (mask && ovs_scan(s, mask_template, &in_port, &in_port_mask, &n)) {
+            nl_msg_put_u32(key, attr, in_port);
+            nl_msg_put_u32(mask, attr, in_port_mask);
+            return n;
+        } else if (ovs_scan(s, template, &in_port, &n)) {
+            nl_msg_put_u32(key, attr, in_port);
+            if (mask) {
+                nl_msg_put_u32(mask, attr, UINT32_MAX);
+            }
+            return n;
+        }
+    }
+
+    {
+        const char *prefix;
+        size_t prefix_len;
+
+        if (attr == OVS_KEY_ATTR_IN_PORT) {
+            prefix = "in_port(";
+        } else if (attr == OVS_KEY_ATTR_IN_PHY_PORT) {
+            prefix = "in_phy_port(";
+        } else {
+            NOT_REACHED();
+        }
+
+        prefix_len = strlen(prefix);
+
+        if (port_names && !strncmp(s, prefix, prefix_len)) {
+            const char *name;
+            const struct simap_node *node;
+            int name_len;
+
+            name = s + prefix_len;
+            name_len = strcspn(name, ")");
+            node = simap_find_len(port_names, name, name_len);
+            if (node) {
+                nl_msg_put_u32(key, OVS_KEY_ATTR_IN_PORT, node->data);
+
+                if (mask) {
+                    nl_msg_put_u32(mask, OVS_KEY_ATTR_IN_PORT, UINT32_MAX);
+                }
+                return prefix_len + name_len + 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int
 parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
                         struct ofpbuf *key, struct ofpbuf *mask)
 {
@@ -1663,40 +1733,18 @@ parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
     }
 
     {
-        uint32_t in_port;
-        uint32_t in_port_mask;
-        int n = -1;
-
-        if (mask && ovs_scan(s, "in_port(%"SCNi32"/%"SCNi32")%n",
-                             &in_port, &in_port_mask, &n)) {
-            nl_msg_put_u32(key, OVS_KEY_ATTR_IN_PORT, in_port);
-            nl_msg_put_u32(mask, OVS_KEY_ATTR_IN_PORT, in_port_mask);
-            return n;
-        } else if (ovs_scan(s, "in_port(%"SCNi32")%n", &in_port, &n)) {
-            nl_msg_put_u32(key, OVS_KEY_ATTR_IN_PORT, in_port);
-            if (mask) {
-                nl_msg_put_u32(mask, OVS_KEY_ATTR_IN_PORT, UINT32_MAX);
-            }
+        int n = parse_odp_key_mask_port(s, port_names,
+                                        OVS_KEY_ATTR_IN_PORT, key, mask);
+        if (n) {
             return n;
         }
     }
 
-
-    if (port_names && !strncmp(s, "in_port(", 8)) {
-        const char *name;
-        const struct simap_node *node;
-        int name_len;
-
-        name = s + 8;
-        name_len = strcspn(name, ")");
-        node = simap_find_len(port_names, name, name_len);
-        if (node) {
-            nl_msg_put_u32(key, OVS_KEY_ATTR_IN_PORT, node->data);
-
-            if (mask) {
-                nl_msg_put_u32(mask, OVS_KEY_ATTR_IN_PORT, UINT32_MAX);
-            }
-            return 8 + name_len + 1;
+    {
+        int n = parse_odp_key_mask_port(s, port_names,
+                                        OVS_KEY_ATTR_IN_PHY_PORT, key, mask);
+        if (n) {
+            return n;
         }
     }
 
