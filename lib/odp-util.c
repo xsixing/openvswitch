@@ -2392,7 +2392,7 @@ parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
  *
  * If 'port_names' is nonnull, it points to an simap that maps from a port name
  * to a port number.  (Port names may be used instead of port numbers in
- * in_port.)
+ * in_port and in_phy_port.)
  *
  * On success, the attributes appended to 'key' are individually syntactically
  * valid, but they may not be valid as a sequence.  'key' might, for example,
@@ -2461,9 +2461,16 @@ odp_flow_key_from_flow__(struct ofpbuf *buf, const struct flow *data,
     nl_msg_put_u32(buf, OVS_KEY_ATTR_SKB_MARK, data->pkt_mark);
 
     /* Add an ingress port attribute if this is a mask or 'odp_in_port'
-     * is not the magical value "ODPP_NONE". */
+     * is not the magical value "ODPP_NONE".
+     *
+     * Uses the same value for in_phy_port and in_port.
+     *
+     * This conveniently ignores the question of how to determine
+     * the in_phy_port for cases such as tunnels where it may differ
+     * from in_port but likely not be a port present in the bridge. */
     if (is_mask || odp_in_port != ODPP_NONE) {
         nl_msg_put_odp_port(buf, OVS_KEY_ATTR_IN_PORT, odp_in_port);
+        nl_msg_put_odp_port(buf, OVS_KEY_ATTR_IN_PHY_PORT, odp_in_port);
     }
 
     eth_key = nl_msg_put_unspec_uninit(buf, OVS_KEY_ATTR_ETHERNET,

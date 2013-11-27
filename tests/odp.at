@@ -79,7 +79,7 @@ sed 's/^/skb_priority(0),skb_mark(0),/' odp-base.txt | sed -n 's/,frag=no),/,fra
  echo
  echo '# Valid forms with IP later fragment.'
 sed 's/^/skb_priority(0),skb_mark(0),/' odp-base.txt | sed -n 's/,frag=no),.*/,frag=later)/p'
-) > odp.txt
+) | sed 's/in_port(1),/&in_phy_port(1),/g' > odp.txt
 AT_CAPTURE_FILE([odp.txt])
 AT_CHECK_UNQUOTED([test-odp parse-keys < odp.txt], [0], [`cat odp.txt`
 ])
